@@ -77,6 +77,9 @@ function normalizeCapabilityInputs(
         : undefined);
     if (Array.isArray(cues)) {
       inputs.cues = cues.map((cue) => {
+        if (typeof cue === "string") {
+          return { text: cue, start_sec: 17, end_sec: 20 };
+        }
         if (!cue || typeof cue !== "object") return cue;
         const item = cue as Record<string, unknown>;
         return {
