@@ -18,18 +18,33 @@ import {
 
 const MAX_PLAN_ATTEMPTS = 3;
 const MAX_DECISION_ATTEMPTS = 3;
+const PREFERRED_CAPABILITIES: Record<string, string[]> = {
+  image: ["flux-schnell", "ideogram-v4", "flux-dev"],
+  video: ["ltx-25-i2v-fast", "ltx-25-t2v-pro", "flux-3-draft-i2v", "ray-32-i2v"],
+  audio: ["gemini-tts", "chatterbox-tts", "music", "minimax-music-3"],
+  tool: ["ffmpeg-concat", "ffmpeg-burn-subtitles", "ffmpeg-colorgrade"],
+};
 
 function summarizeCapabilities(caps: LivepeerCapability[]): string {
   const grouped = new Map<string, LivepeerCapability[]>();
   for (const capability of caps) {
     const type = classifyCapability(capability);
     const group = grouped.get(type) ?? [];
-    if (group.length < (type === "tool" ? 4 : 8)) group.push(capability);
+    group.push(capability);
     grouped.set(type, group);
   }
 
-  return [...grouped.values()]
-    .flat()
+  return [...grouped.entries()]
+    .flatMap(([type, group]) => {
+      const preferred = PREFERRED_CAPABILITIES[type] ?? [];
+      return group
+        .sort((a, b) => {
+          const aIndex = preferred.indexOf(a.name);
+          const bIndex = preferred.indexOf(b.name);
+          return (aIndex < 0 ? 100 : aIndex) - (bIndex < 0 ? 100 : bIndex);
+        })
+        .slice(0, type === "tool" ? 4 : 8);
+    })
     .map((c) => {
       const kind = classifyCapability(c);
       const price = c.display_price_usd != null
