@@ -70,19 +70,22 @@ function normalizeCapabilityInputs(
   if (step.capability === "ffmpeg-burn-subtitles") {
     if (inputs.position === "bottom-center") inputs.position = "bottom";
     if (inputs.position === "top-center") inputs.position = "top";
-    for (const key of ["cues", "inline_cues"]) {
-      const cues = inputs[key];
-      if (!Array.isArray(cues)) continue;
-      inputs[key] = cues.map((cue) => {
+    const cues = Array.isArray(inputs.cues)
+      ? inputs.cues
+      : inputs.inline_cues;
+    if (Array.isArray(cues)) {
+      inputs.cues = cues.map((cue) => {
         if (!cue || typeof cue !== "object") return cue;
         const item = cue as Record<string, unknown>;
         return {
-          ...item,
+          text: item.text,
           start_sec: item.start_sec ?? item.start,
           end_sec: item.end_sec ?? item.end,
         };
       });
     }
+    delete inputs.inline_cues;
+    delete inputs.font;
   }
   return inputs;
 }
