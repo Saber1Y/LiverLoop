@@ -13,6 +13,10 @@ import { runMediaJob } from "../livepeer/jobs";
 import type { LivepeerCapability } from "../livepeer/types";
 import { aggregateEvaluations, evaluateArtifact } from "./critic";
 import { createProductionPlan, directorDecide } from "./director";
+import { getPublishedKnowledgeAssets } from "../knowledge/repository";
+import { retrieveKnowledgeAsset } from "../dkg/retrieve";
+import { finalizeRunKnowledge } from "../knowledge/publisher";
+import type { MediaRunKnowledgeAsset } from "../domain/knowledge";
 
 type StepArtifact = {
   stepId: string;
@@ -140,11 +144,29 @@ export async function executeRun(runId: string): Promise<void> {
 
   try {
     const capabilities = await getCapabilities();
+    const priorKnowledge: MediaRunKnowledgeAsset[] = [];
+    const storedKnowledge = getPublishedKnowledgeAssets().filter(
+      (asset) => asset.content.project === (run.projectId ?? "liverloop"),
+    );
+    for (const stored of storedKnowledge) {
+      if (!stored.ual) continue;
+      try {
+        const retrieved = await retrieveKnowledgeAsset(stored.ual);
+        priorKnowledge.push(retrieved);
+        recordEvent({ runId, type: "KNOWLEDGE_RETRIEVED", data: { ual: stored.ual, lessons: retrieved.lessons } });
+      } catch (error) {
+        recordEvent({
+          runId,
+          type: "KNOWLEDGE_RETRIEVED",
+          data: { ual: stored.ual, status: "failed", error: error instanceof Error ? error.message : "Retrieval failed" },
+        });
+      }
+    }
     updateRun(run.id, { status: "planning" });
     const { plan } = await createProductionPlan({
       brief: run.brief,
       capabilities,
-      knowledge: [],
+      knowledge: priorKnowledge,
     });
     recordEvent({ runId, type: "PLAN_CREATED", data: { plan } });
 
@@ -235,6 +257,29 @@ export async function executeRun(runId: string): Promise<void> {
     if (!finalVersionId) throw new Error("Run completed without a selected version");
     updateRun(run.id, { status: "completed" });
     recordEvent({ runId, type: "RUN_COMPLETED", data: { finalVersionId, totalCost } });
+
+    try {
+      const finalVersions = getRunVersions(runId);
+      const finalVersion = finalVersions.find((version) => version.id === finalVersionId);
+      if (!finalVersion) throw new Error("Selected final version could not be loaded.");
+      recordEvent({ runId, type: "KNOWLEDGE_EXTRACTED", data: { version: finalVersion.versionNumber } });
+      const knowledge = await finalizeRunKnowledge({
+        run,
+        versions: finalVersions,
+        finalVersionNumber: finalVersion.versionNumber,
+      });
+      recordEvent({
+        runId,
+        type: "KNOWLEDGE_PUBLISHED",
+        data: { status: knowledge.publication.status, ual: knowledge.publication.ual, network: knowledge.publication.network, error: knowledge.publication.error },
+      });
+    } catch (error) {
+      recordEvent({
+        runId,
+        type: "KNOWLEDGE_PUBLISHED",
+        data: { status: "failed", error: error instanceof Error ? error.message : "Knowledge publication failed" },
+      });
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown run failure";
     updateRun(run.id, { status: "failed" });
