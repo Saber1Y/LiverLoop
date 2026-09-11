@@ -43,7 +43,7 @@ export function RunDashboard({ runId }: { runId: string }) {
       <div className="mx-auto max-w-[1400px]">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5">
           <div className="flex items-center gap-5"><Link href="/" className="font-mono text-sm tracking-[0.16em]">LIVERLOOP</Link><span className="text-muted-foreground/40">/</span><span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Run {data.run.id}</span></div>
-          <Link href="/run/new" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> New run</Link>
+          <div className="flex items-center gap-5"><Link href={`/provenance/${runId}`} className="text-sm text-muted-foreground hover:text-foreground">Provenance</Link><Link href="/run/new" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> New run</Link></div>
         </header>
 
         <section className="grid gap-12 border-b border-border py-12 lg:grid-cols-[0.8fr_1.2fr] lg:py-16">
