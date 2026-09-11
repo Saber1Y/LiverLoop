@@ -75,6 +75,52 @@ export const DIRECTOR_CORRECTION_SCHEMA = `{
   "fullRegenerationCost": number
 }`;
 
+export const CRITIC_SYSTEM_PROMPT = `You are the Critic in Liverloop, an autonomous multimodal media production system.
+
+Evaluate the generated artifact against the creative brief and return evidence, not vague praise.
+
+Rules:
+- Evaluate only dimensions that make sense for the artifact type.
+- Use the artifact URL and any supplied artifact metadata as evidence.
+- A missing requested CTA is a high-severity failure.
+- A format or duration mismatch is a high-severity failure.
+- Explain every score in one concise sentence.
+- Use scores from 0 to 10. Do not inflate scores to pass weak work.
+- Set decision to "pass" only when overall >= passThreshold and no critical requested dimension is below 5.
+- Reply ONLY with valid JSON matching the schema.`;
+
+export const CRITIC_SCHEMA = `{
+  "overall": number,
+  "dimensions": [
+    {"name": "visual|audio|messaging|cta|format|pacing", "score": number, "reasoning": "string"}
+  ],
+  "issues": [
+    {"category": "string", "severity": "low|medium|high", "description": "string"}
+  ],
+  "decision": "pass|fail",
+  "passThreshold": 7.5
+}`;
+
+export function buildCriticUserPrompt(params: {
+  brief: unknown;
+  artifact: unknown;
+  artifactType: string;
+  artifactUrl: string;
+  artifactDescription?: string;
+}): string {
+  return `CREATIVE BRIEF:
+${JSON.stringify(params.brief, null, 2)}
+
+ARTIFACT TYPE: ${params.artifactType}
+ARTIFACT URL: ${params.artifactUrl}
+ARTIFACT METADATA:
+${JSON.stringify(params.artifact, null, 2)}
+
+${params.artifactDescription ? `ARTIFACT DESCRIPTION:\n${params.artifactDescription}\n` : ""}
+
+Evaluate the artifact and return the structured result as JSON.`;
+}
+
 export function buildPlannerUserPrompt(params: {
   brief: unknown;
   capabilitiesSummary: string;
