@@ -68,8 +68,8 @@ function normalizeCapabilityInputs(
     if (!allowed.has(inputs.camera_motion)) inputs.camera_motion = "dolly_in";
   }
   if (step.capability === "ffmpeg-burn-subtitles") {
-    if (inputs.position === "bottom-center") inputs.position = "bottom";
-    if (inputs.position === "top-center") inputs.position = "top";
+    if (inputs.position === "bottom-center" || inputs.position === "bottom_center") inputs.position = "bottom";
+    if (inputs.position === "top-center" || inputs.position === "top_center") inputs.position = "top";
     const cues = Array.isArray(inputs.cues)
       ? inputs.cues
       : inputs.inline_cues;
