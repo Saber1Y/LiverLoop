@@ -4,7 +4,7 @@ import type { EvaluationResult } from "./evaluation";
 
 export const KnowledgeIteration = z.object({
   version: z.string(),
-  evaluation: z.record(z.number()),
+  evaluation: z.record(z.string(), z.number()),
   failure: z.string().optional(),
 });
 export type KnowledgeIteration = z.infer<typeof KnowledgeIteration>;

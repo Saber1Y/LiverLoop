@@ -5,13 +5,13 @@ export const PlanStep = z.object({
   capability: z.string(),
   purpose: z.string(),
   inputRefs: z.array(z.string()).default([]),
-  params: z.record(z.unknown()).default({}),
+  params: z.record(z.string(), z.unknown()).default({}),
 });
 export type PlanStep = z.infer<typeof PlanStep>;
 
 export const ProductionPlan = z.object({
   goal: z.string(),
-  constraints: z.record(z.unknown()).default({}),
+  constraints: z.record(z.string(), z.unknown()).default({}),
   steps: z.array(PlanStep).min(1, "Plan must contain at least one step"),
   knowledgeUsed: z.array(z.string()).default([]),
 });
