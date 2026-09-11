@@ -72,7 +72,9 @@ function normalizeCapabilityInputs(
     if (inputs.position === "top-center" || inputs.position === "top_center") inputs.position = "top";
     const cues = Array.isArray(inputs.cues)
       ? inputs.cues
-      : inputs.inline_cues;
+      : inputs.inline_cues ?? (typeof inputs.cue === "string"
+        ? [{ text: inputs.cue, start: inputs.start, end: inputs.end }]
+        : undefined);
     if (Array.isArray(cues)) {
       inputs.cues = cues.map((cue) => {
         if (!cue || typeof cue !== "object") return cue;
@@ -85,6 +87,9 @@ function normalizeCapabilityInputs(
       });
     }
     delete inputs.inline_cues;
+    delete inputs.cue;
+    delete inputs.start;
+    delete inputs.end;
     delete inputs.font;
   }
   return inputs;
