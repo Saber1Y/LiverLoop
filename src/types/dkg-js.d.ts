@@ -30,7 +30,7 @@ declare module "dkg.js" {
   }
 }
 
-declare module "dkg.js/constants/constants.js" {
+declare module "dkg.js/constants" {
   export const BLOCKCHAIN_IDS: {
     BASE_TESTNET: string;
     BASE_MAINNET: string;
