@@ -20,11 +20,23 @@ const MAX_PLAN_ATTEMPTS = 3;
 const MAX_DECISION_ATTEMPTS = 3;
 
 function summarizeCapabilities(caps: LivepeerCapability[]): string {
-  return caps
+  const grouped = new Map<string, LivepeerCapability[]>();
+  for (const capability of caps) {
+    const type = classifyCapability(capability);
+    const group = grouped.get(type) ?? [];
+    if (group.length < (type === "tool" ? 4 : 8)) group.push(capability);
+    grouped.set(type, group);
+  }
+
+  return [...grouped.values()]
+    .flat()
     .map((c) => {
       const kind = classifyCapability(c);
-      const price = c.display_price_usd != null ? `$${c.display_price_usd}/${c.display_unit ?? "unit"}` : "price unknown";
-      return `- ${c.name} [${kind}] ${c.model_id} ${c.description ? `| ${c.description}` : ""} (${price})`;
+      const price = c.display_price_usd != null
+        ? `$${c.display_price_usd}/${c.display_unit ?? "unit"}`
+        : "price unknown";
+      const description = c.description ? ` | ${c.description.slice(0, 120)}` : "";
+      return `- ${c.name} [${kind}] ${c.model_id}${description} (${price})`;
     })
     .join("\n");
 }
@@ -65,6 +77,7 @@ export async function createProductionPlan(params: {
         system: `${DIRECTOR_SYSTEM_PROMPT}\n\n${schemaHint}`,
         user: userPrompt,
         temperature: 0.3,
+        maxTokens: 2400,
       });
       const plan = ProductionPlanSchema.parse(raw);
       return { plan, knowledgeUsed: plan.knowledgeUsed ?? [] };
