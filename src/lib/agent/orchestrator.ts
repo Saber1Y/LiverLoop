@@ -121,6 +121,7 @@ async function executeSteps(params: {
       .map((inputRef) => artifacts.get(inputRef))
       .find((artifact) => artifact?.url);
     const mediaType = classifyCapability(capability);
+    const inlineCapability = new Set(["ltx-25-i2v-fast", "ltx-25-t2v-fast"]);
     recordEvent({
       runId: params.runId,
       type: "JOB_STARTED",
@@ -133,7 +134,8 @@ async function executeSteps(params: {
       sourceUrl: sourceArtifact?.url,
       inputs: normalizeCapabilityInputs(step),
       async: (mediaType === "video" || mediaType === "audio")
-        && Number(params.plan.constraints.duration ?? 0) > 10,
+        && Number(params.plan.constraints.duration ?? 0) > 10
+        && !inlineCapability.has(step.capability),
       timeout: mediaType === "image" ? 90 : 900,
       maxWaitMs: 10 * 60 * 1000,
     });
