@@ -171,7 +171,7 @@ export async function executeRun(runId: string): Promise<void> {
     recordEvent({ runId, type: "PLAN_CREATED", data: { plan } });
 
     let totalCost = 0;
-    let currentPlan = plan;
+    const currentPlan = plan;
     let existing = new Map<string, StepArtifact>();
     let finalVersionId: string | null = null;
 
