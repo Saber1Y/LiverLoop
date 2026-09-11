@@ -20,7 +20,7 @@ const MAX_PLAN_ATTEMPTS = 3;
 const MAX_DECISION_ATTEMPTS = 3;
 const PREFERRED_CAPABILITIES: Record<string, string[]> = {
   image: ["flux-schnell", "ideogram-v4", "flux-dev"],
-  video: ["ltx-25-i2v-fast", "ltx-25-t2v-pro", "flux-3-draft-i2v", "ray-32-i2v"],
+  video: ["ltx-25-i2v-fast", "ltx-25-t2v-fast", "flux-3-draft-i2v", "ray-32-i2v"],
   audio: ["gemini-tts", "chatterbox-tts", "music", "minimax-music-3"],
   tool: ["ffmpeg-concat", "ffmpeg-burn-subtitles", "ffmpeg-colorgrade"],
 };
