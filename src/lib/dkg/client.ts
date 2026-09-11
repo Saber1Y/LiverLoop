@@ -1,5 +1,5 @@
 import DKG from "dkg.js";
-import { BLOCKCHAIN_IDS } from "dkg.js/constants/constants.js";
+import { BLOCKCHAIN_IDS } from "dkg.js/constants";
 
 let client: DKG | null = null;
 
