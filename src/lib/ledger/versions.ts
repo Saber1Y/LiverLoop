@@ -72,6 +72,16 @@ export function setSelectedVersion(runId: string, versionId: string): void {
   });
 }
 
+export function updateVersionEvaluation(
+  versionId: string,
+  evaluation: EvaluationResult,
+): void {
+  db.update(versions)
+    .set({ evaluation })
+    .where(eq(versions.id, versionId))
+    .run();
+}
+
 export function getRunVersions(runId: string): MediaVersion[] {
   return db
     .select()
