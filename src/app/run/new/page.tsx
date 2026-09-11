@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   ArrowLeft, 
@@ -146,7 +147,7 @@ export default function WorkspacePage() {
             }`}
           >
             <div className="absolute inset-0 bg-gradient-to-br from-neutral-900 to-neutral-950 flex items-center justify-center">
-              {latestArtifact?.type === "video" ? <video src={latestArtifact.url} controls className="size-full object-cover" /> : latestArtifact?.type === "image" ? <img src={latestArtifact.url} alt="Livepeer production artifact" className="size-full object-cover" /> : <div className="text-center"><Video className="mx-auto size-12 text-white/10" /><p className="mt-3 font-mono text-[10px] uppercase tracking-widest text-white/30">Waiting for Livepeer artifact</p></div>}
+              {latestArtifact?.type === "video" ? <video src={latestArtifact.url} controls className="size-full object-cover" /> : latestArtifact?.type === "image" ? <Image src={latestArtifact.url} alt="Livepeer production artifact" fill unoptimized sizes="100vw" className="object-cover" /> : <div className="text-center"><Video className="mx-auto size-12 text-white/10" /><p className="mt-3 font-mono text-[10px] uppercase tracking-widest text-white/30">Waiting for Livepeer artifact</p></div>}
             </div>
 
             {/* Overlays during fix */}
