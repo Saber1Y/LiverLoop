@@ -3,7 +3,7 @@ import type { LlmCompleteOptions, LlmResponse } from "./types";
 import { LlmError } from "./types";
 
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-export const DEFAULT_MODEL = "meta-llama/llama-4-scout:free";
+export const DEFAULT_MODEL = "nex-agi/nex-n2.5-pro:free";
 
 let client: OpenAI | null = null;
 
