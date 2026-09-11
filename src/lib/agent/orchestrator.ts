@@ -50,6 +50,26 @@ function buildStepPrompt(
   ].join("\n");
 }
 
+function normalizeCapabilityInputs(
+  step: PlanStep,
+): Record<string, unknown> {
+  const inputs = { ...step.params };
+  if (step.capability === "ltx-25-i2v-fast" && typeof inputs.camera_motion === "string") {
+    const allowed = new Set([
+      "dolly_in",
+      "dolly_out",
+      "dolly_left",
+      "dolly_right",
+      "jib_up",
+      "jib_down",
+      "static",
+      "focus_shift",
+    ]);
+    if (!allowed.has(inputs.camera_motion)) inputs.camera_motion = "dolly_in";
+  }
+  return inputs;
+}
+
 async function executeSteps(params: {
   runId: string;
   plan: ProductionPlan;
@@ -86,7 +106,7 @@ async function executeSteps(params: {
       capability: step.capability,
       prompt: buildStepPrompt(step, params.plan.constraints),
       sourceUrl: sourceArtifact?.url,
-      inputs: step.params,
+      inputs: normalizeCapabilityInputs(step),
       async: (mediaType === "video" || mediaType === "audio")
         && Number(params.plan.constraints.duration ?? 0) > 10,
       timeout: mediaType === "image" ? 90 : 900,
