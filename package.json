@@ -19,6 +19,7 @@
     "date-fns": "^4.4.0",
     "dkg.js": "^8.2.4",
     "drizzle-orm": "^0.45.2",
+    "framer-motion": "^13.2.0",
     "lucide-react": "^1.45.0",
     "nanoid": "^5.1.16",
     "next": "16.3.4",
