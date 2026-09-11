@@ -106,10 +106,33 @@ export async function llmComplete(options: LlmCompleteOptions): Promise<LlmRespo
 export async function llmJson<T>(
   options: Omit<LlmCompleteOptions, "json">,
 ): Promise<T> {
-  const res = await llmComplete({ ...options, json: true });
-  try {
-    return JSON.parse(res.content) as T;
-  } catch {
-    throw new LlmError("OpenRouter returned malformed JSON despite json mode.");
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const repairInstruction = attempt === 0
+      ? ""
+      : "\nPrevious output was invalid or incomplete. Return only a complete valid JSON object. Keep it concise and do not include markdown, commentary, or reasoning.";
+
+    const res = await llmComplete({
+      ...options,
+      system: `${options.system ?? ""}${repairInstruction}`,
+      json: true,
+    });
+
+    try {
+      return JSON.parse(res.content) as T;
+    } catch {
+      lastError = new LlmError(
+        `invalid JSON response (${res.content.length} characters)`,
+        502,
+        true,
+      );
+    }
   }
+
+  throw new LlmError(
+    `OpenRouter returned malformed JSON after 2 attempts: ${lastError?.message ?? "empty response"}`,
+    502,
+    true,
+  );
 }
