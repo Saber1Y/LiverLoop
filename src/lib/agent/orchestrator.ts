@@ -87,7 +87,8 @@ async function executeSteps(params: {
       prompt: buildStepPrompt(step, params.plan.constraints),
       sourceUrl: sourceArtifact?.url,
       inputs: step.params,
-      async: mediaType === "video" || mediaType === "audio",
+      async: (mediaType === "video" || mediaType === "audio")
+        && Number(params.plan.constraints.duration ?? 0) > 10,
       timeout: mediaType === "image" ? 90 : 900,
       maxWaitMs: 10 * 60 * 1000,
     });
