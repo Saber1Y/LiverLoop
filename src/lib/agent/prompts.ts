@@ -18,6 +18,9 @@ Rules:
 - If the brief specifies a format/duration/CTA, reflect that in constraints.
 - Use "inputRefs" to declare dependencies between steps (paste the id of the step whose output this step consumes).
 - "knowledgeUsed" must list every lesson string you incorporated and say how it changed the plan.
+- Keep the plan concise: use no more than 4 steps.
+- Keep each step's "params" to at most 3 short machine settings. Do not put long prompts in "params".
+- Do not repeat the brief or write long prose in any JSON field.
 - Reply ONLY with valid JSON matching the schema below.`;
 
 export const DIRECTOR_PLAN_SCHEMA = `{
