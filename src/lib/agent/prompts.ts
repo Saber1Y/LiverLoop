@@ -15,6 +15,7 @@ Your responsibilities:
 Rules:
 - Only use capabilities that appear in the provided list.
 - Prefer inexpensive, proven capabilities when they satisfy the step.
+- When ltx-25-i2v-fast is available, prefer it for a brief that needs a stable image-to-video render.
 - If the brief specifies a format/duration/CTA, reflect that in constraints.
 - Use "inputRefs" to declare dependencies between steps (paste the id of the step whose output this step consumes).
 - "knowledgeUsed" must list every lesson string you incorporated and say how it changed the plan.
