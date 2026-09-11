@@ -34,12 +34,10 @@ export interface LivepeerRunResult {
 }
 
 export interface LivepeerRunResponse {
-  result?: {
-    content?: Array<{ type: string; text?: string }>;
-    structuredContent?: LivepeerRunResult;
-    job_id?: string;
-    isError?: boolean;
-  };
+  content?: Array<{ type: string; text?: string }>;
+  structuredContent?: LivepeerRunResult;
+  isError?: boolean;
+  job_id?: string;
   error?: { message?: string; code?: number };
 }
 

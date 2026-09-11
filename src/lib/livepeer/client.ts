@@ -153,9 +153,9 @@ export async function runLivepeerCapability(
     session,
   )) as LivepeerRunResponse;
 
-  const content = result?.result?.structuredContent;
+  const content = result?.structuredContent;
   if (!content) {
-    const err = result?.error?.message ?? result?.result?.isError
+    const err = result?.error?.message ?? result?.isError
       ? "Livepeer run_capability returned an error"
       : LIVE_PEER_ERRORS.UNKNOWN;
     throw new Error(err);
@@ -178,7 +178,7 @@ export async function checkLivepeerJob(jobId: string): Promise<{
     { name: "get_create_media", arguments: { job_id: jobId } },
     session,
   )) as LivepeerRunResponse;
-  const c = result?.result?.structuredContent;
+  const c = result?.structuredContent;
   return {
     status: c?.status ?? "queued",
     url: c?.url,
