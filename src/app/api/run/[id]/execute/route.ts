@@ -1,5 +1,6 @@
 import { getRun } from "@/lib/ledger/runs";
 import { executeRun } from "@/lib/agent/orchestrator";
+import { after } from "next/server";
 
 export const maxDuration = 900;
 
@@ -14,8 +15,12 @@ export async function POST(
     return Response.json({ error: "Run is already executing." }, { status: 409 });
   }
 
-  void executeRun(id).catch((error: unknown) => {
-    console.error(`[liverloop] run ${id} failed`, error);
+  after(async () => {
+    try {
+      await executeRun(id);
+    } catch (error) {
+      console.error(`[liverloop] run ${id} failed`, error);
+    }
   });
 
   return Response.json({ runId: id, status: "started" }, { status: 202 });
