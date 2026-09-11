@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { Activity, ArrowLeft, Check, CircleAlert, CircleDashed, DatabaseZap, LoaderCircle, Sparkles } from "lucide-react";
 import Link from "next/link";
 
@@ -68,7 +69,7 @@ function EventRow({ event, active }: { event: RunData["events"][number]; active:
 }
 
 function ArtifactPreview({ artifact }: { artifact: RunData["versions"][number]["artifacts"][number] }) {
-  return <div><div className="overflow-hidden rounded-xl border border-border bg-black/20">{artifact.type === "video" ? <video src={artifact.url} controls className="aspect-video w-full object-cover" /> : artifact.type === "audio" ? <div className="flex aspect-video items-center justify-center p-8"><AudioPlayer src={artifact.url} /></div> : <img src={artifact.url} alt={artifact.purpose} className="aspect-video w-full object-cover" />}</div><div className="mt-4 flex items-center justify-between gap-4"><p className="text-sm text-muted-foreground">{artifact.purpose}</p><span className="shrink-0 font-mono text-[10px] uppercase text-primary">REAL / LIVEPEER</span></div></div>;
+  return <div><div className="overflow-hidden rounded-xl border border-border bg-black/20">{artifact.type === "video" ? <video src={artifact.url} controls className="aspect-video w-full object-cover" /> : artifact.type === "audio" ? <div className="flex aspect-video items-center justify-center p-8"><AudioPlayer src={artifact.url} /></div> : <div className="relative aspect-video"><Image src={artifact.url} alt={artifact.purpose} fill unoptimized sizes="(max-width: 1024px) 100vw, 60vw" className="object-cover" /></div>}</div><div className="mt-4 flex items-center justify-between gap-4"><p className="text-sm text-muted-foreground">{artifact.purpose}</p><span className="shrink-0 font-mono text-[10px] uppercase text-primary">REAL / LIVEPEER</span></div></div>;
 }
 
 function AudioPlayer({ src }: { src: string }) { return <audio src={src} controls className="w-full" />; }
