@@ -67,6 +67,21 @@ function normalizeCapabilityInputs(
     ]);
     if (!allowed.has(inputs.camera_motion)) inputs.camera_motion = "dolly_in";
   }
+  if (step.capability === "ffmpeg-burn-subtitles") {
+    for (const key of ["cues", "inline_cues"]) {
+      const cues = inputs[key];
+      if (!Array.isArray(cues)) continue;
+      inputs[key] = cues.map((cue) => {
+        if (!cue || typeof cue !== "object") return cue;
+        const item = cue as Record<string, unknown>;
+        return {
+          ...item,
+          start_sec: item.start_sec ?? item.start,
+          end_sec: item.end_sec ?? item.end,
+        };
+      });
+    }
+  }
   return inputs;
 }
 
