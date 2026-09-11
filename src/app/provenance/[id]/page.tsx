@@ -1,0 +1,14 @@
+import Link from "next/link";
+import { ArrowLeft, Check, CircleAlert, CircleDashed } from "lucide-react";
+import { getRun } from "@/lib/ledger/runs";
+import { getRunEvents } from "@/lib/ledger/events";
+
+export const dynamic = "force-dynamic";
+
+export default async function ProvenancePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const run = getRun(id);
+  const events = run ? getRunEvents(id) : [];
+  if (!run) return <main className="p-10">Run not found.</main>;
+  return <main className="min-h-[100dvh] px-5 py-6 md:px-10"><div className="mx-auto max-w-[960px]"><header className="flex items-center justify-between border-b border-border pb-5"><Link href={`/run/${id}`} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> Back to run</Link><span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Provenance / {id}</span></header><div className="py-16 md:py-24"><p className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">Traceable production history</p><h1 className="mt-5 text-5xl font-semibold tracking-[-0.06em]">Where this media came from.</h1><p className="mt-6 max-w-xl leading-7 text-muted-foreground">Every meaningful decision is kept in the run ledger. The final knowledge asset is a selected summary, not a dump of raw logs or media.</p><div className="relative mt-16"><div className="absolute bottom-6 left-[9px] top-6 w-px bg-border" />{events.slice().reverse().map((event) => <div key={event.id} className="relative flex gap-6 pb-8"><span className="relative z-10 mt-1 flex size-5 items-center justify-center rounded-full border border-border bg-background">{event.type === "RUN_FAILED" ? <CircleAlert className="size-3 text-red-300" /> : event.type.includes("COMPLETED") || event.type.includes("PUBLISHED") || event.type.includes("CREATED") ? <Check className="size-3 text-primary" /> : <CircleDashed className="size-3 text-muted-foreground" />}</span><div className="flex-1 border-b border-border pb-6"><div className="flex justify-between gap-4"><h2 className="font-mono text-[11px] uppercase tracking-[0.14em]">{event.type.replaceAll("_", " ")}</h2><time className="font-mono text-[9px] text-muted-foreground">{new Date(event.createdAt).toLocaleString()}</time></div><p className="mt-3 text-sm leading-6 text-muted-foreground">{event.data.message ? String(event.data.message) : event.data.capability ? `Livepeer capability: ${String(event.data.capability)}` : event.type === "KNOWLEDGE_PUBLISHED" ? event.data.ual ? `Knowledge Asset published with UAL ${String(event.data.ual)}.` : "Knowledge publication did not complete." : "Recorded in the Liverloop run ledger."}</p></div></div>)}</div></div></div></main>;
+}
