@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, ArrowLeft, AudioLines, Check, CircleAlert, CircleDashed, DatabaseZap, LoaderCircle, Sparkles } from "lucide-react";
+import { Activity, ArrowLeft, Check, CircleAlert, CircleDashed, DatabaseZap, LoaderCircle, Sparkles } from "lucide-react";
 import Link from "next/link";
 
 type RunData = {
