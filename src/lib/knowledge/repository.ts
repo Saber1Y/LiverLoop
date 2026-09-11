@@ -70,3 +70,18 @@ export function getPublishedKnowledgeAssets(): StoredKnowledgeAsset[] {
       createdAt: row.createdAt,
     }));
 }
+
+export function getKnowledgeAssetById(id: string): StoredKnowledgeAsset | null {
+  const row = db.select().from(knowledgeAssets).where(eq(knowledgeAssets.id, id)).get();
+  if (!row) return null;
+  return {
+    id: row.id,
+    runId: row.runId,
+    content: row.content as MediaRunKnowledgeAsset,
+    ual: row.ual,
+    network: row.network,
+    status: row.status,
+    publishedAt: row.publishedAt,
+    createdAt: row.createdAt,
+  };
+}
