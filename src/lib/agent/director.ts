@@ -13,6 +13,7 @@ import {
   DIRECTOR_CORRECTION_SCHEMA,
   buildPlannerUserPrompt,
   buildCorrectionUserPrompt,
+  buildKnowledgeLessonPrompt,
 } from "./prompts";
 
 const MAX_PLAN_ATTEMPTS = 3;
