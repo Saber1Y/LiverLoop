@@ -54,6 +54,9 @@ function normalizeCapabilityInputs(
   step: PlanStep,
 ): Record<string, unknown> {
   const inputs = { ...step.params };
+  if (/^ltx-25-(i2v|t2v)-fast$/.test(step.capability) && !inputs.resolution) {
+    inputs.resolution = "720p";
+  }
   if (/tts|-tts$|chatterbox/i.test(step.capability) && typeof inputs.text === "string" && !inputs.prompt) {
     inputs.prompt = inputs.text;
     delete inputs.text;
