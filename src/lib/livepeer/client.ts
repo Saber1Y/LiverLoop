@@ -10,6 +10,7 @@ const AGENT_BASE_URL = "https://agent.livepeer.org";
 const CAPABILITIES_PATH = "/api/capabilities";
 const MCP_RAW_PATH = "/api/mcp/raw";
 const MCP_PROTOCOL_VERSION = "2025-03-26";
+const MAX_RUN_ATTEMPTS = 3;
 
 interface McpSession {
   id: string | null;
@@ -137,7 +138,7 @@ export async function fetchLivepeerCapabilities(
 export async function runLivepeerCapability(
   options: LivepeerRunOptions,
 ): Promise<LivepeerRunResult> {
-  const session = await initializeMcp();
+  let session = await initializeMcp();
 
   const args: Record<string, unknown> = {};
   if (options.capability) args.capability = options.capability;
@@ -147,23 +148,39 @@ export async function runLivepeerCapability(
   if (options.timeout) args.timeout = options.timeout;
   if (options.async !== undefined) args.async = options.async;
 
-  const result = (await jsonRpc(
-    "tools/call",
-    { name: "run_capability", arguments: args },
-    session,
-  )) as LivepeerRunResponse;
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < MAX_RUN_ATTEMPTS; attempt += 1) {
+    try {
+      const result = (await jsonRpc(
+        "tools/call",
+        { name: "run_capability", arguments: args },
+        session,
+      )) as LivepeerRunResponse;
 
-  const content = result?.structuredContent;
-  if (!content) {
-    const err = result?.error?.message ?? result?.isError
-      ? "Livepeer run_capability returned an error"
-      : LIVE_PEER_ERRORS.UNKNOWN;
-    throw new Error(err);
+      const content = result?.structuredContent;
+      if (!content) {
+        const err = result?.error?.message ?? result?.isError
+          ? "Livepeer run_capability returned an error"
+          : LIVE_PEER_ERRORS.UNKNOWN;
+        throw new Error(err);
+      }
+      if (content.ok === false || content.error) {
+        throw new Error(content.error ?? LIVE_PEER_ERRORS.UNKNOWN);
+      }
+      return content;
+    } catch (err) {
+      lastError = err as Error;
+      const message = lastError.message;
+      const retryable =
+        message === LIVE_PEER_ERRORS.UNAVAILABLE ||
+        /no orchestrator|rejected|capacity|unavailable|502|503|504|timed? out/i.test(message);
+      if (attempt >= MAX_RUN_ATTEMPTS - 1 || !retryable) throw lastError;
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+      session = await initializeMcp();
+    }
   }
-  if (content.ok === false || content.error) {
-    throw new Error(content.error ?? LIVE_PEER_ERRORS.UNKNOWN);
-  }
-  return content;
+
+  throw lastError ?? new Error(LIVE_PEER_ERRORS.UNKNOWN);
 }
 
 export async function checkLivepeerJob(jobId: string): Promise<{
