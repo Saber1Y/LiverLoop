@@ -54,6 +54,10 @@ function normalizeCapabilityInputs(
   step: PlanStep,
 ): Record<string, unknown> {
   const inputs = { ...step.params };
+  if (/tts|-tts$|chatterbox/i.test(step.capability) && typeof inputs.text === "string" && !inputs.prompt) {
+    inputs.prompt = inputs.text;
+    delete inputs.text;
+  }
   if (step.capability === "ltx-25-i2v-fast" && typeof inputs.camera_motion === "string") {
     const allowed = new Set([
       "dolly_in",
@@ -98,6 +102,20 @@ function normalizeCapabilityInputs(
   return inputs;
 }
 
+function multiInputInputs(
+  step: PlanStep,
+  artifacts: StepArtifact[],
+): Record<string, unknown> {
+  const inputs = normalizeCapabilityInputs(step);
+  const urls = artifacts.map((artifact) => ({ url: artifact.url }));
+  if (step.capability === "ffmpeg-audio-mix") {
+    inputs.tracks = urls;
+  } else if (step.capability === "ffmpeg-concat") {
+    inputs.clips = urls;
+  }
+  return inputs;
+}
+
 async function executeSteps(params: {
   runId: string;
   plan: ProductionPlan;
@@ -123,6 +141,9 @@ async function executeSteps(params: {
     const sourceArtifact = step.inputRefs
       .map((inputRef) => artifacts.get(inputRef))
       .find((artifact) => artifact?.url);
+    const inputArtifacts = step.inputRefs
+      .map((inputRef) => artifacts.get(inputRef))
+      .filter((artifact): artifact is StepArtifact => Boolean(artifact?.url));
     const mediaType = classifyCapability(capability);
     const inlineCapability = new Set(["ltx-25-i2v-fast", "ltx-25-t2v-fast"]);
     recordEvent({
@@ -135,7 +156,7 @@ async function executeSteps(params: {
       capability: step.capability,
       prompt: buildStepPrompt(step, params.plan.constraints),
       sourceUrl: sourceArtifact?.url,
-      inputs: normalizeCapabilityInputs(step),
+      inputs: multiInputInputs(step, inputArtifacts),
       async: (mediaType === "video" || mediaType === "audio")
         && Number(params.plan.constraints.duration ?? 0) > 10
         && !inlineCapability.has(step.capability),
@@ -202,7 +223,7 @@ export async function executeRun(runId: string): Promise<void> {
     for (const stored of storedKnowledge) {
       if (!stored.ual) continue;
       try {
-        const retrieved = await retrieveKnowledgeAsset(stored.ual);
+        const retrieved = await retrieveKnowledgeAsset(stored.ual, stored.content.run);
         priorKnowledge.push(retrieved);
         recordEvent({ runId, type: "KNOWLEDGE_RETRIEVED", data: { ual: stored.ual, lessons: retrieved.lessons } });
       } catch (error) {
