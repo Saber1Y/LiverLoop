@@ -20,7 +20,7 @@ export function getLlmClient(): OpenAI {
   client = new OpenAI({
     baseURL: OPENROUTER_BASE_URL,
     apiKey,
-    timeout: 120_000,
+    timeout: 300_000,
   });
   return client;
 }
@@ -72,7 +72,10 @@ export async function llmComplete(options: LlmCompleteOptions): Promise<LlmRespo
         ...(options.json ? { response_format: { type: "json_object" } } : {}),
       });
 
-      const content = completion.choices[0]?.message?.content ?? "";
+      const content = completion.choices?.[0]?.message?.content ?? "";
+      if (!completion.choices || completion.choices.length === 0) {
+        throw new LlmError("OpenRouter returned no choices. Retrying.", 502, true);
+      }
       return {
         content: options.json ? stripCodeFences(content) : content,
         model: completion.model,
@@ -83,10 +86,13 @@ export async function llmComplete(options: LlmCompleteOptions): Promise<LlmRespo
         },
       };
     } catch (err) {
-      const e = err as { status?: number; message?: string };
+      const e = err as { status?: number; message?: string; code?: string };
       const status = e.status;
+      const timeoutError =
+        status === undefined &&
+        (/(timed out|ETIMEDOUT|timeout)/i.test(e.message ?? "") || e.code === "ETIMEDOUT");
       const retryable =
-        status === 429 || status === 408 || status === 529 || status === 502 || status === 503;
+        status === 429 || status === 408 || status === 529 || status === 502 || status === 503 || timeoutError;
 
       if (attempt >= maxAttempts - 1 || !retryable) {
         throw new LlmError(
