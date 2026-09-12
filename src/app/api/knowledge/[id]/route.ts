@@ -13,7 +13,7 @@ export async function GET(
   if (!stored.ual) return Response.json({ asset: stored, verification: "unavailable" });
 
   try {
-    const verified = await retrieveKnowledgeAsset(stored.ual);
+    const verified = await retrieveKnowledgeAsset(stored.ual, stored.content.run);
     return Response.json({ asset: stored, verified, verification: "verified" });
   } catch (error) {
     return Response.json({

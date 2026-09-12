@@ -1,53 +1,53 @@
 import { MediaRunKnowledgeAsset } from "../domain/knowledge";
-import { getDkgClient } from "./client";
+import { escapeLiteral, knowledgeAssetSubject, unescapeLiteral } from "./publish";
+import { queryContextGraph } from "./client";
 import type { PublicKnowledgeAsset } from "./types";
 
-function contentFromResponse(response: Record<string, unknown>): Record<string, unknown> {
-  const publicContent = response.public;
-  if (publicContent && typeof publicContent === "object") {
-    return publicContent as Record<string, unknown>;
-  }
-  const assertion = response.assertion;
-  if (assertion && typeof assertion === "object") {
-    const nested = (assertion as Record<string, unknown>).public;
-    if (nested && typeof nested === "object") return nested as Record<string, unknown>;
-  }
-  return response;
+const LL = "https://liverloop.media/ontology/";
+
+type QuadRow = { s: string; p: string; o: string };
+
+function unescapeObject(object: string): string {
+  const match = object.match(/^"([\s\S]*)"$/);
+  return match ? unescapeLiteral(match[1]) : object;
 }
 
 export async function retrieveKnowledgeAsset(
   ual: string,
+  run?: string,
 ): Promise<PublicKnowledgeAsset> {
-  const result = await getDkgClient().asset.get(ual, { contentType: "public" });
-  const content = contentFromResponse(result);
-  const asset = MediaRunKnowledgeAsset.parse({
-    type: "MediaRunKnowledgeAsset",
-    project: String(content.project ?? ""),
-    run: String(content.run ?? ""),
-    brief: content.brief,
-    iterations: content.iterations ?? [],
-    finalVersion: String(content.finalVersion ?? ""),
-    lessons: content.lessons ?? [],
-    ual,
-  });
-
+  const sparql = run
+    ? `SELECT ?p ?o WHERE { <${knowledgeAssetSubject(run)}> ?p ?o }`
+    : `SELECT ?p ?o WHERE { ?s <${LL}payload> ?o }`;
+  const result = await queryContextGraph({ sparql });
+  const rows = (result.result.bindings ?? []) as QuadRow[];
+  const payload = rows.find((row) => row.p === `${LL}payload`);
+  if (!payload) {
+    throw new Error(`No DKG content found for ${ual}.`);
+  }
+  const parsed = JSON.parse(unescapeObject(payload.o)) as Record<string, unknown>;
+  const asset = MediaRunKnowledgeAsset.safeParse(parsed);
+  if (!asset.success) {
+    throw new Error(`Content for ${ual} could not be parsed as a knowledge asset.`);
+  }
   return {
-    ...asset,
-    sourceReferences: Array.isArray(content.sourceReferences) ? content.sourceReferences.map(String) : [],
-    generationHistory: Array.isArray(content.generationHistory)
-      ? content.generationHistory.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+    ...asset.data,
+    ual,
+    sourceReferences: Array.isArray(parsed.sourceReferences) ? parsed.sourceReferences.map(String) : [],
+    generationHistory: Array.isArray(parsed.generationHistory)
+      ? parsed.generationHistory.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
       : [],
-    transformationHistory: Array.isArray(content.transformationHistory)
-      ? content.transformationHistory.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+    transformationHistory: Array.isArray(parsed.transformationHistory)
+      ? parsed.transformationHistory.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
       : [],
-    decisionRationale: String(content.decisionRationale ?? ""),
+    decisionRationale: String(parsed.decisionRationale ?? ""),
   };
 }
 
 export async function queryKnowledgeByProject(project: string): Promise<unknown> {
-  const escaped = project.replaceAll('"', '\\"');
-  return getDkgClient().graph.query(
-    `PREFIX ll: <https://liverloop.media/ontology/>\nSELECT ?asset ?run ?finalVersion WHERE { ?asset ll:project "${escaped}" . ?asset ll:run ?run . ?asset ll:finalVersion ?finalVersion . }`,
-    "SELECT",
-  );
+  const escaped = escapeLiteral(project);
+  const result = await queryContextGraph({
+    sparql: `PREFIX ll: <https://liverloop.media/ontology/>\nSELECT ?asset ?run ?finalVersion WHERE { ?asset ll:project "${escaped}" . ?asset ll:run ?run . ?asset ll:finalVersion ?finalVersion . }`,
+  });
+  return result.result;
 }

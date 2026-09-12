@@ -1,18 +1,55 @@
 import { MediaRunKnowledgeAsset } from "../domain/knowledge";
-import { getDkgClient, dkgNetwork } from "./client";
+import { createKnowledgeAsset, dkgNetwork, publishKnowledgeAssetToVm, shareKnowledgeAsset } from "./client";
+import type { V10Quad } from "./client";
 import type { DkgAssetResponse, DkgPublication, PublicKnowledgeAsset } from "./types";
 
-function findTransactionHash(value: unknown): string | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  for (const [key, nested] of Object.entries(value)) {
-    if (key.toLowerCase().includes("transactionhash") && typeof nested === "string") return nested;
-    const result = findTransactionHash(nested);
-    if (result) return result;
-  }
-  return undefined;
+const LL = "https://liverloop.media/ontology/";
+const SCHEMA = "https://schema.org/";
+
+export function knowledgeAssetSubject(run: string): string {
+  return `did:dkg:liverloop:media-run:${run}`;
 }
 
-function toPublicJsonLd(asset: PublicKnowledgeAsset): Record<string, unknown> {
+export function knowledgeAssetName(run: string): string {
+  return `liverloop-media-run-${run}`;
+}
+
+export function escapeLiteral(value: string): string {
+  return value
+    .replaceAll("\\", "\\\\")
+    .replaceAll('"', '\\"')
+    .replaceAll("\n", "\\n")
+    .replaceAll("\r", "\\r")
+    .replaceAll("\t", "\\t");
+}
+
+export function unescapeLiteral(value: string): string {
+  return value
+    .replaceAll("\\t", "\t")
+    .replaceAll("\\r", "\r")
+    .replaceAll("\\n", "\n")
+    .replaceAll('\\"', '"')
+    .replaceAll("\\\\", "\\");
+}
+
+function toQuads(asset: PublicKnowledgeAsset): V10Quad[] {
+  const subject = knowledgeAssetSubject(asset.run);
+  const payload = escapeLiteral(JSON.stringify(toPayload(asset)));
+  return [
+    { subject, predicate: `${LL}project`, object: `"${escapeLiteral(asset.project)}"` },
+    { subject, predicate: `${LL}run`, object: `"${escapeLiteral(asset.run)}"` },
+    { subject, predicate: `${LL}finalVersion`, object: `"${escapeLiteral(asset.finalVersion)}"` },
+    { subject, predicate: `${SCHEMA}additionalType`, object: `"${escapeLiteral(asset.type)}"` },
+    ...asset.lessons.map((lesson) => ({
+      subject,
+      predicate: `${LL}lesson`,
+      object: `"${escapeLiteral(lesson)}"`,
+    })),
+    { subject, predicate: `${LL}payload`, object: `"${payload}"` },
+  ];
+}
+
+function toPayload(asset: PublicKnowledgeAsset): Record<string, unknown> {
   const validated = MediaRunKnowledgeAsset.parse(asset);
   return {
     "@context": {
@@ -21,6 +58,7 @@ function toPublicJsonLd(asset: PublicKnowledgeAsset): Record<string, unknown> {
     },
     "@id": `urn:liverloop:media-run:${validated.run}`,
     "@type": "liverloop:MediaRunKnowledgeAsset",
+    type: validated.type,
     project: validated.project,
     run: validated.run,
     brief: validated.brief,
@@ -39,20 +77,25 @@ export async function publishKnowledgeAsset(
 ): Promise<DkgPublication> {
   const network = dkgNetwork();
   try {
-    const result = (await getDkgClient().asset.create(
-      { public: toPublicJsonLd(asset) },
-      {
-        epochsNum: 2,
-        minimumNumberOfFinalizationConfirmations: 3,
-        minimumNumberOfNodeReplications: 1,
-      },
-    )) as DkgAssetResponse;
+    const name = knowledgeAssetName(asset.run);
+    const created = await createKnowledgeAsset({ name, quads: toQuads(asset) });
+    if (created.status !== "swm-shared" || created.publishReady !== true) {
+      await shareKnowledgeAsset({ name });
+    }
+    const publication = await publishKnowledgeAssetToVm({ name });
 
-    if (!result.UAL) {
+    const response: DkgAssetResponse = {
+      UAL: publication.ual,
+      datasetRoot: typeof created.merkleRoot === "string" ? created.merkleRoot : undefined,
+      transactionHash: publication.txHash,
+      operation: { ...publication },
+    };
+
+    if (!response.UAL) {
       return {
         status: "failed",
         network,
-        datasetRoot: result.datasetRoot,
+        datasetRoot: response.datasetRoot,
         error: "OriginTrail completed without returning a UAL.",
       };
     }
@@ -60,9 +103,9 @@ export async function publishKnowledgeAsset(
     return {
       status: "published",
       network,
-      ual: result.UAL,
-      datasetRoot: result.datasetRoot,
-      transactionHash: findTransactionHash(result.operation),
+      ual: response.UAL,
+      datasetRoot: response.datasetRoot,
+      transactionHash: response.transactionHash,
     };
   } catch (error) {
     return {

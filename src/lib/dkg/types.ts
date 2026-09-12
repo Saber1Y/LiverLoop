@@ -21,5 +21,6 @@ export type PublicKnowledgeAsset = MediaRunKnowledgeAsset & {
 export type DkgAssetResponse = {
   UAL?: string;
   datasetRoot?: string;
+  transactionHash?: string;
   operation?: Record<string, unknown>;
 };
