@@ -7,14 +7,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import { 
   ArrowLeft, 
   CircleDot, 
-  Sparkles, 
   ScanSearch, 
   DatabaseZap, 
   BrainCircuit, 
   Command, 
   Send,
   Video,
-  CheckCircle2
+  CheckCircle2,
+  CircleAlert,
+  LoaderCircle
 } from "lucide-react";
 
 type RunSnapshot = {
@@ -26,8 +27,86 @@ type RunSnapshot = {
   }[];
 };
 
+type WorkspacePhase = {
+  label: string;
+  detail: string;
+};
+
+type WorkspaceProgress = {
+  phases: (WorkspacePhase & { state: "done" | "current" | "upcoming" })[];
+  current: WorkspacePhase;
+  failed: string | null;
+  active: boolean;
+};
+
+const workspacePhases: WorkspacePhase[] = [
+  { label: "Planning", detail: "Director is turning your brief into a production plan." },
+  { label: "Memory retrieval", detail: "Checking OriginTrail for lessons from previous runs." },
+  { label: "Capability selection", detail: "Selecting the next real Livepeer capability." },
+  { label: "Livepeer generation", detail: "Generating the first real media artifact." },
+  { label: "Evaluation", detail: "Critic is scoring the artifact against your brief." },
+  { label: "Improvement", detail: "Director is deciding what to keep and regenerate." },
+  { label: "Knowledge publication", detail: "Publishing the durable lesson to OriginTrail." },
+];
+
+function getWorkspaceProgress(snapshot: RunSnapshot | null, runState: string): WorkspaceProgress {
+  if (!snapshot && runState === "idle") {
+    return {
+      phases: workspacePhases.map((phase) => ({ ...phase, state: "upcoming" as const })),
+      current: { label: "Ready to start", detail: "Describe the media outcome you want, then send the brief to the Director." },
+      failed: null,
+      active: false,
+    };
+  }
+  const latest = snapshot?.events[0];
+  const type = latest?.type ?? "RUN_CREATED";
+  const failed = snapshot?.run.status === "failed" || runState === "failed";
+  const failureMessage = failed && latest?.type === "RUN_FAILED" && latest.data.message
+    ? String(latest.data.message)
+    : null;
+  let currentIndex = 0;
+
+  if (type === "KNOWLEDGE_RETRIEVED") currentIndex = 1;
+  else if (type === "PLAN_CREATED") currentIndex = 2;
+  else if (["CAPABILITY_SELECTED", "JOB_STARTED", "JOB_COMPLETED", "ARTIFACT_CREATED"].includes(type)) currentIndex = 3;
+  else if (["EVALUATION_STARTED", "EVALUATION_COMPLETED"].includes(type)) currentIndex = 4;
+  else if (["DIRECTOR_DECISION", "RETRY_STARTED"].includes(type)) currentIndex = 5;
+  else if (["KNOWLEDGE_EXTRACTED", "KNOWLEDGE_PUBLISHED", "RUN_COMPLETED"].includes(type)) currentIndex = 6;
+  if (snapshot?.run.status === "completed") currentIndex = 6;
+
+  return {
+    phases: workspacePhases.map((phase, index) => ({
+      ...phase,
+      state: index < currentIndex ? "done" : index === currentIndex ? "current" : "upcoming",
+    })),
+    current: workspacePhases[currentIndex],
+    failed: failureMessage,
+    active: !failed && runState !== "complete",
+  };
+}
+
+function WorkspaceProgress({ progress }: { progress: WorkspaceProgress }) {
+  return (
+    <div className="w-64 rounded-xl border border-border bg-card/90 p-4 text-xs text-muted-foreground backdrop-blur-md shadow-xl">
+      <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-primary">
+        {progress.failed ? <CircleAlert className="size-3 text-red-300" /> : progress.active ? <LoaderCircle className="size-3 animate-spin" /> : <span className="size-2 rounded-full bg-primary" />}
+        {progress.failed ? "Run failed" : progress.current.label}
+      </div>
+      <p className="mt-3 leading-5">{progress.failed ?? progress.current.detail}</p>
+      <div className="mt-4 space-y-2 border-t border-border pt-3">
+        {progress.phases.map((phase) => (
+          <div key={phase.label} className="flex items-center gap-2">
+            {phase.state === "done" ? <CheckCircle2 className="size-3 text-primary" /> : phase.state === "current" ? <span className="size-2 animate-pulse rounded-full bg-primary" /> : <span className="size-2 rounded-full bg-muted" />}
+            <span className={phase.state === "current" ? "text-foreground" : ""}>{phase.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function WorkspacePage() {
-  const [runState, setRunState] = useState<"idle" | "evaluating" | "fixing" | "complete">("idle");
+  const [runState, setRunState] = useState<"idle" | "evaluating" | "fixing" | "complete" | "failed">("idle");
   const [command, setCommand] = useState("");
   const [runId, setRunId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<RunSnapshot | null>(null);
@@ -43,7 +122,7 @@ export default function WorkspacePage() {
       setSnapshot(next);
       if (next.run.status === "completed") setRunState("complete");
       else if (next.run.status === "improving") setRunState("fixing");
-      else if (next.run.status === "failed") setRunState("idle");
+       else if (next.run.status === "failed") setRunState("failed");
       else setRunState("evaluating");
     };
     void poll();
@@ -76,6 +155,7 @@ export default function WorkspacePage() {
 
   const latestVersion = snapshot?.versions.at(-1);
   const latestArtifact = latestVersion?.artifacts.at(-1);
+  const progress = getWorkspaceProgress(snapshot, runState);
   const dimension = (name: string) => latestVersion?.evaluation?.dimensions.find((item) => item.name === name)?.score;
   const publishedEvent = snapshot?.events.find((event) => event.type === "KNOWLEDGE_PUBLISHED");
   const publishedUal = typeof publishedEvent?.data.ual === "string" ? publishedEvent.data.ual : null;
@@ -106,11 +186,11 @@ export default function WorkspacePage() {
           </Link>
         </div>
         <div className="flex items-center gap-4">
-          <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-            <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-            Livepeer Active
+             <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+             <span className={`size-1.5 rounded-full ${runId ? "animate-pulse bg-primary" : "bg-muted-foreground/50"}`} />
+             {runId ? "Livepeer Active" : "Ready to create"}
           </span>
-          <div className="rounded-full bg-card px-3 py-1 font-mono text-[10px] border border-border">RUN / 014</div>
+           <div className="rounded-full bg-card px-3 py-1 font-mono text-[10px] border border-border">{runId ? `RUN / ${runId.slice(-3)}` : "NEW RUN"}</div>
         </div>
       </header>
 
@@ -123,18 +203,9 @@ export default function WorkspacePage() {
           {/* Agent HUD - Top Left (Director) */}
           <div className="absolute -left-12 -top-12 z-20 flex flex-col gap-2">
             <div className="flex items-center gap-2 rounded-full border border-border bg-card/80 px-3 py-1.5 font-mono text-[10px] backdrop-blur-md">
-              <BrainCircuit className="size-3 text-primary" /> Director Plan
+              <BrainCircuit className="size-3 text-primary" /> Production state
             </div>
-            <div className="rounded-xl border border-border bg-card/80 p-3 text-xs text-muted-foreground backdrop-blur-md shadow-xl w-48">
-              <div className="flex items-center gap-2"><CheckCircle2 className="size-3 text-primary" /> Visual style matched</div>
-              <div className="flex items-center gap-2 mt-2"><CheckCircle2 className="size-3 text-primary" /> Length constraints met</div>
-              {runState === "fixing" && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-start gap-2 mt-2 pt-2 border-t border-border">
-                  <Sparkles className="size-3 text-amber-400 shrink-0 mt-0.5" /> 
-                  <span className="text-amber-400">Isolating audio track for FFmpeg swap...</span>
-                </motion.div>
-              )}
-            </div>
+            <WorkspaceProgress progress={progress} />
           </div>
 
           {/* Central Media Artifact */}
@@ -147,12 +218,12 @@ export default function WorkspacePage() {
             }`}
           >
             <div className="absolute inset-0 bg-gradient-to-br from-neutral-900 to-neutral-950 flex items-center justify-center">
-              {latestArtifact?.type === "video" ? <video src={latestArtifact.url} controls className="size-full object-cover" /> : latestArtifact?.type === "image" ? <Image src={latestArtifact.url} alt="Livepeer production artifact" fill unoptimized sizes="100vw" className="object-cover" /> : <div className="text-center"><Video className="mx-auto size-12 text-white/10" /><p className="mt-3 font-mono text-[10px] uppercase tracking-widest text-white/30">Waiting for Livepeer artifact</p></div>}
+              {latestArtifact?.type === "video" ? <video src={latestArtifact.url} controls className="size-full object-cover" /> : latestArtifact?.type === "image" ? <Image src={latestArtifact.url} alt="Livepeer production artifact" fill unoptimized sizes="100vw" className="object-cover" /> : <div className="max-w-sm px-6 text-center">{progress.failed ? <CircleAlert className="mx-auto size-12 text-red-300/70" /> : progress.active ? <LoaderCircle className="mx-auto size-10 animate-spin text-primary/70" /> : <Video className="mx-auto size-10 text-white/20" />}<p className={`mt-4 font-mono text-[10px] uppercase tracking-widest ${progress.failed ? "text-red-200" : progress.active ? "text-primary" : "text-white/50"}`}>{progress.failed ? "Production paused" : progress.active ? progress.current.label : "Ready for a brief"}</p><p className="mt-3 text-sm leading-6 text-white/45">{progress.failed ? progress.failed : progress.current.detail}</p></div>}
             </div>
 
             {/* Overlays during fix */}
             <AnimatePresence>
-              {(runState === "evaluating" || runState === "fixing") && (
+              {snapshot && !progress.failed && runState !== "idle" && runState !== "complete" && (
                 <motion.div 
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -161,14 +232,14 @@ export default function WorkspacePage() {
                 >
                   <div className="flex items-center gap-3 font-mono text-xs uppercase tracking-widest text-primary">
                     <span className="size-2 animate-ping rounded-full bg-primary" />
-                    {runState === "evaluating" ? "Critic Evaluating..." : "Livepeer Re-rendering Audio..."}
+                     {progress.current.label}
                   </div>
                 </motion.div>
               )}
             </AnimatePresence>
 
             <div className="absolute bottom-4 left-4 rounded bg-black/50 px-2 py-1 font-mono text-[10px] text-white/70 backdrop-blur">
-              {latestVersion ? `V${snapshot?.versions.length ?? 1}_${runState === "complete" ? "FINAL" : "PROCESSING"}` : "NO ARTIFACT"}
+               {latestVersion ? `V${snapshot?.versions.length ?? 1}_${runState === "complete" ? "FINAL" : "PROCESSING"}` : progress.failed ? "FAILED" : progress.current.label.toUpperCase()}
             </div>
           </motion.div>
 
@@ -250,7 +321,7 @@ export default function WorkspacePage() {
           </button>
         </form>
         <div className="mt-3 text-center font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground/60">
-          {error ?? (snapshot ? `Run ${snapshot.run.id} · Livepeer cost $${snapshot.run.totalCost.toFixed(4)}` : "Director ready for a real brief")}
+           {error ?? (snapshot ? `${progress.failed ? "Run paused" : progress.current.label} · ${snapshot.run.id} · Livepeer cost $${snapshot.run.totalCost.toFixed(4)}` : "Director ready for a real brief")}
         </div>
       </div>
 

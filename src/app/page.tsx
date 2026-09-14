@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -106,8 +107,40 @@ const loop = [
   },
 ];
 
+type PublishedKnowledgeAsset = {
+  runId: string;
+  ual: string | null;
+  network: string | null;
+  status: string;
+  publishedAt: string | null;
+  content: {
+    lessons: string[];
+    sourceReferences: string[];
+  };
+};
+
 // --- Main Page ---
 export default function Home() {
+  const [proof, setProof] = useState<PublishedKnowledgeAsset[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/knowledge", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() as Promise<{ assets: PublishedKnowledgeAsset[] }> : null))
+      .then((data) => {
+        if (active && data) setProof(data.assets);
+      })
+      .catch(() => {
+        // The landing page remains usable when the local ledger is unavailable.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const latestProof = proof[0];
+
   return (
     <main className="min-h-[100dvh] overflow-hidden bg-background selection:bg-primary/30">
       <LandingNav />
@@ -523,11 +556,50 @@ export default function Home() {
                 <p className="mt-2 text-sm text-muted-foreground">
                   A real asset is published to OriginTrail after a completed run.
                 </p>
-                <div className="mt-6 w-full rounded-lg bg-background/50 p-3 text-left font-mono text-[10px] text-muted-foreground border border-primary/20">
-                   <div className="mb-1 text-primary">PUBLICATION STATUS:</div>
-                   <div className="break-all">
-                     Awaiting a real run and verified UAL
-                   </div>
+                <div className="mt-6 w-full rounded-lg border border-primary/20 bg-background/50 p-4 text-left font-mono text-[10px] text-muted-foreground">
+                  {latestProof ? (
+                    <>
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <span className="text-primary">PUBLICATION STATUS</span>
+                        <span className="flex items-center gap-1.5 text-primary">
+                          <CheckCircle2 className="size-3" /> VERIFIED
+                        </span>
+                      </div>
+                      <div className="grid gap-2 border-b border-border/60 pb-3 sm:grid-cols-3">
+                        <div>
+                          <span className="block text-muted-foreground/70">PUBLISHED RUNS</span>
+                          <span className="mt-1 block text-sm text-foreground">{proof.length}</span>
+                        </div>
+                        <div>
+                          <span className="block text-muted-foreground/70">LESSONS RETAINED</span>
+                          <span className="mt-1 block text-sm text-foreground">{latestProof.content.lessons.length}</span>
+                        </div>
+                        <div>
+                          <span className="block text-muted-foreground/70">NETWORK</span>
+                          <span className="mt-1 block text-sm text-foreground">{latestProof.network ?? "unavailable"}</span>
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <span className="block text-muted-foreground/70">LATEST UAL</span>
+                        <span className="mt-1 block break-all text-primary/90">{latestProof.ual ?? "unavailable"}</span>
+                      </div>
+                      {latestProof.content.sourceReferences[0] ? (
+                        <a
+                          href={latestProof.content.sourceReferences[0]}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-4 inline-flex items-center gap-1.5 text-primary transition-colors hover:text-foreground"
+                        >
+                          Open latest Livepeer artifact <ArrowUpRight className="size-3" />
+                        </a>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <div className="mb-1 text-primary">PUBLICATION STATUS:</div>
+                      <div className="break-all">Waiting for a published run and verified UAL</div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

@@ -52,6 +52,7 @@ function buildStepPrompt(
 
 function normalizeCapabilityInputs(
   step: PlanStep,
+  constraints: Record<string, unknown> = {},
 ): Record<string, unknown> {
   const inputs = { ...step.params };
   if (/^ltx-25-(i2v|t2v)-fast$/.test(step.capability) && !inputs.resolution) {
@@ -96,6 +97,13 @@ function normalizeCapabilityInputs(
         };
       });
     }
+    if (!inputs.srt_url && (!Array.isArray(inputs.cues) || inputs.cues.length === 0)) {
+      const text = typeof constraints.cta === "string" && constraints.cta.trim()
+        ? constraints.cta.trim()
+        : "Learn more";
+      const duration = typeof constraints.duration === "number" ? constraints.duration : 20;
+      inputs.cues = [{ text, start_sec: Math.max(0, duration - 3), end_sec: duration }];
+    }
     delete inputs.inline_cues;
     delete inputs.cue;
     delete inputs.start;
@@ -108,8 +116,9 @@ function normalizeCapabilityInputs(
 function multiInputInputs(
   step: PlanStep,
   artifacts: StepArtifact[],
+  constraints: Record<string, unknown>,
 ): Record<string, unknown> {
-  const inputs = normalizeCapabilityInputs(step);
+  const inputs = normalizeCapabilityInputs(step, constraints);
   const urls = artifacts.map((artifact) => ({ url: artifact.url }));
   if (step.capability === "ffmpeg-audio-mix") {
     inputs.tracks = urls;
@@ -130,39 +139,55 @@ async function executeSteps(params: {
   let cost = 0;
 
   for (const step of params.stepsToRun) {
-    const capability = params.capabilities.find((item) => item.name === step.capability);
+    let executionStep = step;
+    let capability = params.capabilities.find((item) => item.name === step.capability);
     if (!capability) {
       throw new Error(`Livepeer capability is no longer available: ${step.capability}`);
+    }
+
+    const sourceArtifact = step.inputRefs
+      .map((inputRef) => artifacts.get(inputRef))
+      .find((artifact) => artifact?.url && (step.capability !== "ltx-25-i2v-fast" || artifact.type === "image"));
+    const inputArtifacts = step.inputRefs
+      .map((inputRef) => artifacts.get(inputRef))
+      .filter((artifact): artifact is StepArtifact => Boolean(artifact?.url));
+
+    if (step.capability === "ltx-25-i2v-fast" && sourceArtifact?.type !== "image") {
+      const fallback = params.capabilities.find((item) => item.name === "ltx-25-t2v-fast");
+      if (!fallback) {
+        throw new Error("Image-to-video requires an image input, and no text-to-video fallback is available.");
+      }
+      executionStep = { ...step, capability: fallback.name };
+      capability = fallback;
     }
 
     recordEvent({
       runId: params.runId,
       type: "CAPABILITY_SELECTED",
-      data: { stepId: step.id, capability: step.capability, purpose: step.purpose },
+      data: {
+        stepId: step.id,
+        capability: executionStep.capability,
+        requestedCapability: step.capability !== executionStep.capability ? step.capability : undefined,
+        purpose: step.purpose,
+      },
     });
 
-    const sourceArtifact = step.inputRefs
-      .map((inputRef) => artifacts.get(inputRef))
-      .find((artifact) => artifact?.url);
-    const inputArtifacts = step.inputRefs
-      .map((inputRef) => artifacts.get(inputRef))
-      .filter((artifact): artifact is StepArtifact => Boolean(artifact?.url));
     const mediaType = classifyCapability(capability);
     const inlineCapability = new Set(["ltx-25-i2v-fast", "ltx-25-t2v-fast"]);
     recordEvent({
       runId: params.runId,
       type: "JOB_STARTED",
-      data: { stepId: step.id, capability: step.capability },
+      data: { stepId: step.id, capability: executionStep.capability },
     });
 
     const result = await runMediaJob({
-      capability: step.capability,
-      prompt: buildStepPrompt(step, params.plan.constraints),
+      capability: executionStep.capability,
+      prompt: buildStepPrompt(executionStep, params.plan.constraints),
       sourceUrl: sourceArtifact?.url,
-      inputs: multiInputInputs(step, inputArtifacts),
+      inputs: multiInputInputs(executionStep, inputArtifacts, params.plan.constraints),
       async: (mediaType === "video" || mediaType === "audio")
         && Number(params.plan.constraints.duration ?? 0) > 10
-        && !inlineCapability.has(step.capability),
+        && !inlineCapability.has(executionStep.capability),
       timeout: mediaType === "image" ? 90 : 900,
       maxWaitMs: 10 * 60 * 1000,
     });
@@ -175,7 +200,7 @@ async function executeSteps(params: {
       stepId: step.id,
       type: artifactTypeFor(result.output_kind, capability),
       url: result.outputUrl,
-      capability: step.capability,
+      capability: executionStep.capability,
       purpose: step.purpose,
       metadata: {
         costUsd: result.cost_usd_estimated ?? 0,
@@ -188,7 +213,7 @@ async function executeSteps(params: {
     recordEvent({
       runId: params.runId,
       type: "JOB_COMPLETED",
-      data: { stepId: step.id, capability: step.capability, costUsd: result.cost_usd_estimated ?? 0 },
+      data: { stepId: step.id, capability: executionStep.capability, costUsd: result.cost_usd_estimated ?? 0 },
     });
     recordEvent({
       runId: params.runId,
