@@ -34,6 +34,8 @@ function artifactTypeFor(
   if (outputKind === "image" || outputKind === "video" || outputKind === "audio") {
     return outputKind;
   }
+  if (capability?.name === "ffmpeg-audio-mix") return "audio";
+  if (capability?.name === "ffmpeg-mux" || capability?.name === "ffmpeg-burn-subtitles" || capability?.name === "ffmpeg-concat") return "video";
   const type = capability ? classifyCapability(capability) : "video";
   if (type === "image" || type === "audio") return type;
   return "video";
@@ -122,6 +124,11 @@ function multiInputInputs(
   const urls = artifacts.map((artifact) => ({ url: artifact.url }));
   if (step.capability === "ffmpeg-audio-mix") {
     inputs.tracks = urls;
+  } else if (step.capability === "ffmpeg-mux") {
+    const video = artifacts.find((artifact) => artifact.type === "video");
+    const audio = artifacts.find((artifact) => artifact.type === "audio");
+    if (video) inputs.video_url = video.url;
+    if (audio) inputs.audio_url = audio.url;
   } else if (step.capability === "ffmpeg-concat") {
     inputs.clips = urls;
   }
@@ -159,6 +166,22 @@ async function executeSteps(params: {
       }
       executionStep = { ...step, capability: fallback.name };
       capability = fallback;
+    }
+
+    if (step.capability === "ffmpeg-audio-mix" && inputArtifacts.some((artifact) => artifact.type === "video") && inputArtifacts.some((artifact) => artifact.type === "audio")) {
+      const fallback = params.capabilities.find((item) => item.name === "ffmpeg-mux");
+      if (!fallback) {
+        throw new Error("Combining video and audio requires ffmpeg-mux, which is not available.");
+      }
+      executionStep = { ...step, capability: fallback.name };
+      capability = fallback;
+    }
+
+    if (executionStep.capability === "ffmpeg-mux" && (!inputArtifacts.some((artifact) => artifact.type === "video") || !inputArtifacts.some((artifact) => artifact.type === "audio"))) {
+      throw new Error("ffmpeg-mux requires one video artifact and one audio artifact.");
+    }
+    if (executionStep.capability === "ffmpeg-burn-subtitles" && sourceArtifact?.type !== "video") {
+      throw new Error("ffmpeg-burn-subtitles requires a video artifact as its input.");
     }
 
     recordEvent({

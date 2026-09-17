@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { MediaBrief, Run as RunSchema, type MediaBrief as MediaBriefType, type Run, type RunStatus } from "../domain/run";
 import { db } from "../db/client";
@@ -39,6 +39,10 @@ export function createRun(input: MediaBriefType): Run {
 export function getRun(id: string): Run | null {
   const row = db.select().from(runs).where(eq(runs.id, id)).get();
   return row ? toRun(row) : null;
+}
+
+export function getRuns(): Run[] {
+  return db.select().from(runs).orderBy(desc(runs.createdAt)).all().map(toRun);
 }
 
 export function updateRun(

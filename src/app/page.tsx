@@ -61,6 +61,7 @@ function LandingNav() {
             <NavLink href="#terminal" label="Agent Log" />
             <NavLink href="#provenance" label="DKG Proof" />
             <NavLink href="#ledger" label="Cost Control" />
+            <NavLink href="/runs" label="Runs" />
           </div>
 
           {/* Right: Actions */}

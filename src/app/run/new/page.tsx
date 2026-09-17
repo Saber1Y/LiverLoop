@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
@@ -13,6 +14,7 @@ import {
   Command, 
   Send,
   Video,
+  Play,
   CheckCircle2,
   CircleAlert,
   LoaderCircle
@@ -155,6 +157,7 @@ export default function WorkspacePage() {
 
   const latestVersion = snapshot?.versions.at(-1);
   const latestArtifact = latestVersion?.artifacts.at(-1);
+  const fallbackVideo = latestVersion?.artifacts.slice().reverse().find((artifact) => artifact.type === "video" && artifact.url !== latestArtifact?.url);
   const progress = getWorkspaceProgress(snapshot, runState);
   const dimension = (name: string) => latestVersion?.evaluation?.dimensions.find((item) => item.name === name)?.score;
   const publishedEvent = snapshot?.events.find((event) => event.type === "KNOWLEDGE_PUBLISHED");
@@ -181,7 +184,7 @@ export default function WorkspacePage() {
             LIVERLOOP
           </Link>
           <div className="hidden h-4 w-px bg-border sm:block" />
-          <Link href="/" className="hidden items-center gap-2 text-xs text-muted-foreground transition-colors hover:text-foreground sm:inline-flex">
+          <Link href="/runs" className="hidden items-center gap-2 text-xs text-muted-foreground transition-colors hover:text-foreground sm:inline-flex">
             <ArrowLeft className="size-3" /> Back to runs
           </Link>
         </div>
@@ -201,7 +204,7 @@ export default function WorkspacePage() {
         <div className="relative w-full max-w-4xl">
           
           {/* Agent HUD - Top Left (Director) */}
-          <div className="absolute -left-12 -top-12 z-20 flex flex-col gap-2">
+          <div className="absolute left-0 top-0 z-20 flex flex-col gap-2 md:-left-8 md:-top-8 xl:-left-64 xl:-top-8">
             <div className="flex items-center gap-2 rounded-full border border-border bg-card/80 px-3 py-1.5 font-mono text-[10px] backdrop-blur-md">
               <BrainCircuit className="size-3 text-primary" /> Production state
             </div>
@@ -218,7 +221,7 @@ export default function WorkspacePage() {
             }`}
           >
             <div className="absolute inset-0 bg-gradient-to-br from-neutral-900 to-neutral-950 flex items-center justify-center">
-              {latestArtifact?.type === "video" ? <video src={latestArtifact.url} controls className="size-full object-cover" /> : latestArtifact?.type === "image" ? <Image src={latestArtifact.url} alt="Livepeer production artifact" fill unoptimized sizes="100vw" className="object-cover" /> : <div className="max-w-sm px-6 text-center">{progress.failed ? <CircleAlert className="mx-auto size-12 text-red-300/70" /> : progress.active ? <LoaderCircle className="mx-auto size-10 animate-spin text-primary/70" /> : <Video className="mx-auto size-10 text-white/20" />}<p className={`mt-4 font-mono text-[10px] uppercase tracking-widest ${progress.failed ? "text-red-200" : progress.active ? "text-primary" : "text-white/50"}`}>{progress.failed ? "Production paused" : progress.active ? progress.current.label : "Ready for a brief"}</p><p className="mt-3 text-sm leading-6 text-white/45">{progress.failed ? progress.failed : progress.current.detail}</p></div>}
+              {latestArtifact?.type === "video" ? <VideoArtifact key={latestArtifact.url} url={latestArtifact.url} fallbackUrl={fallbackVideo?.url} /> : latestArtifact?.type === "image" ? <Image src={latestArtifact.url} alt="Livepeer production artifact" fill unoptimized sizes="100vw" className="object-cover" /> : <div className="max-w-sm px-6 text-center">{progress.failed ? <CircleAlert className="mx-auto size-12 text-red-300/70" /> : progress.active ? <LoaderCircle className="mx-auto size-10 animate-spin text-primary/70" /> : <Video className="mx-auto size-10 text-white/20" />}<p className={`mt-4 font-mono text-[10px] uppercase tracking-widest ${progress.failed ? "text-red-200" : progress.active ? "text-primary" : "text-white/50"}`}>{progress.failed ? "Production paused" : progress.active ? progress.current.label : "Ready for a brief"}</p><p className="mt-3 text-sm leading-6 text-white/45">{progress.failed ? progress.failed : progress.current.detail}</p></div>}
             </div>
 
             {/* Overlays during fix */}
@@ -244,7 +247,7 @@ export default function WorkspacePage() {
           </motion.div>
 
           {/* Agent HUD - Right Side (Critic & Provenance) */}
-          <div className="absolute -right-12 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-4">
+          <div className="absolute right-0 top-full z-20 mt-4 flex w-full flex-col gap-4 md:right-0 md:top-1/2 md:w-auto md:-translate-y-1/2 xl:-right-64">
             
             {/* The Critic Block */}
             <motion.div layout className="w-56 rounded-xl border border-border bg-card/80 p-4 backdrop-blur-md shadow-xl">
@@ -276,7 +279,7 @@ export default function WorkspacePage() {
                   initial={{ opacity: 0, y: 20, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   transition={{ delay: 0.2 }}
-                  className="w-56 rounded-xl border border-primary/40 bg-primary/5 p-4 backdrop-blur-md shadow-[0_0_30px_rgba(200,245,106,0.1)]"
+                  className="w-full rounded-xl border border-primary/40 bg-primary/5 p-4 backdrop-blur-md shadow-[0_0_30px_rgba(200,245,106,0.1)] md:w-56"
                 >
                   <div className="mb-2 flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-primary">
                     <DatabaseZap className="size-3" /> Provenance Saved
@@ -284,7 +287,7 @@ export default function WorkspacePage() {
                   <p className="mb-3 text-[11px] leading-tight text-muted-foreground">
                     Knowledge Asset published and available for future Director plans.
                   </p>
-                  <div className="rounded border border-primary/20 bg-background/50 p-1.5 text-center font-mono text-[8px] text-muted-foreground">
+                   <div className="max-h-20 overflow-y-auto break-all rounded border border-primary/20 bg-background/50 p-2 text-left font-mono text-[8px] leading-4 text-muted-foreground">
                     UAL: {publishedUal}
                   </div>
                 </motion.div>
@@ -326,5 +329,57 @@ export default function WorkspacePage() {
       </div>
 
     </main>
+  );
+}
+
+function VideoArtifact({ url, fallbackUrl }: { url: string; fallbackUrl?: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [source, setSource] = useState(url);
+  const [usingFallback, setUsingFallback] = useState(false);
+
+  const switchToFallback = () => {
+    if (fallbackUrl && source !== fallbackUrl) {
+      setSource(fallbackUrl);
+      setUsingFallback(true);
+    }
+  };
+
+  const togglePlayback = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) void video.play();
+    else video.pause();
+  };
+
+  return (
+    <div className="group relative size-full">
+      <video
+        ref={videoRef}
+        src={source}
+        controls
+        playsInline
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onError={switchToFallback}
+        onLoadedMetadata={(event) => {
+          if (event.currentTarget.videoWidth === 0 || event.currentTarget.videoHeight === 0) switchToFallback();
+        }}
+        className="size-full object-cover"
+      />
+      {!playing ? (
+        <button
+          type="button"
+          onClick={togglePlayback}
+          aria-label="Play final video"
+          className="absolute left-1/2 top-1/2 flex size-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_0_35px_rgba(200,245,106,0.35)] transition-transform hover:scale-105 active:scale-95"
+        >
+          <Play className="ml-1 size-6 fill-current" />
+        </button>
+      ) : null}
+      <div className="pointer-events-none absolute left-4 top-4 rounded-full border border-white/15 bg-black/50 px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.16em] text-white/70 backdrop-blur">
+        {usingFallback ? "Source video preview / final compose unavailable" : "Final artifact / Livepeer"}
+      </div>
+    </div>
   );
 }

@@ -1,5 +1,11 @@
 import { MediaBrief } from "@/lib/domain/run";
-import { createRun } from "@/lib/ledger/runs";
+import { createRun, getRuns } from "@/lib/ledger/runs";
+
+export const dynamic = "force-dynamic";
+
+export async function GET() {
+  return Response.json({ runs: getRuns() });
+}
 
 export async function POST(request: Request) {
   let body: unknown;
