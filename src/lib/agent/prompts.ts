@@ -89,10 +89,10 @@ Rules:
 - Evaluate only dimensions that make sense for the artifact type.
 - Use the artifact URL and any supplied artifact metadata as evidence.
 - Use the VERIFIED MEDIA EVIDENCE block. It states what streams the artifact actually contains (video, audio, image), its real duration, and real dimensions, measured independently by a local media probe. Treat it as ground truth for media type, duration, and dimensions.
-- If the verified evidence conflicts with the artifact's stored type (e.g. a "video" artifact with video stream only, or an "audio" artifact with no audio), report a high-severity issue.
 - If the brief asked for a specific duration or aspect ratio and the verified evidence differs, report a high-severity format/duration issue.
 - If there is no verified probe evidence, do not assume the artifact has any particular stream.
-- A missing requested CTA is a high-severity failure.
+- Visual evidence: the user message includes actual image frames sampled from the artifact at the listed timestamps. Use them to check the visual style, colors, lighting, readability, and whether the requested CTA text is present and legible. The final frame is near the end of the video, so the CTA should be visible there if burned in.
+- A missing or illegible requested CTA is a high-severity failure.
 - Format or duration mismatch is a high-severity failure.
 - Explain every score in one concise sentence.
 - Use scores from 0 to 10. Do not inflate scores to pass weak work.
@@ -117,12 +117,19 @@ export function buildCriticUserPrompt(params: {
   artifactType: string;
   artifactUrl: string;
   artifactDescription?: string;
+  frameTimes?: string[];
 }): string {
+  const frameSection =
+    params.frameTimes && params.frameTimes.length > 0
+      ? `ATTACHED VISUAL FRAMES (actual pixels sampled from the artifact at these times): ${params.frameTimes.join(", ")}.\n`
+      : "ATTACHED VISUAL FRAMES: none (non-visual artifact or frame extraction unavailable). Do not guess visual details you cannot see.\n";
+
   return `CREATIVE BRIEF:
 ${JSON.stringify(params.brief, null, 2)}
 
 ARTIFACT TYPE: ${params.artifactType}
 ARTIFACT URL: ${params.artifactUrl}
+${frameSection}
 ARTIFACT METADATA:
 ${JSON.stringify(params.artifact, null, 2)}
 

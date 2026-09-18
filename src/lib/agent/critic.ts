@@ -2,8 +2,10 @@ import { EvaluationResult as EvaluationResultSchema } from "../domain/evaluation
 import type { EvaluationResult } from "../domain/evaluation";
 import type { MediaBrief } from "../domain/run";
 import type { MediaArtifact, MediaArtifactType } from "../domain/media";
-import { llmJson, currentFastModel } from "../llm/client";
+import { llmJson, currentFastModel, currentVisionModel } from "../llm/client";
+import type { LlmImagePart } from "../llm/types";
 import { LlmError } from "../llm/types";
+import { artifactToImageParts } from "../media/frames";
 import {
   CRITIC_SCHEMA,
   CRITIC_SYSTEM_PROMPT,
@@ -31,6 +33,31 @@ function enforceDecision(result: EvaluationResult): EvaluationResult {
   };
 }
 
+async function buildVisualEvidence(artifact: MediaArtifact): Promise<{
+  images: LlmImagePart[];
+  frameTimes: string[];
+  _error?: string;
+}> {
+  const mediaInspection = artifact.metadata?.mediaInspection as
+    | { durationSec?: number }
+    | undefined;
+  const durationSec = mediaInspection?.durationSec;
+  try {
+    const { images, labels } = await artifactToImageParts({
+      url: artifact.url,
+      type: artifact.type,
+      durationSec,
+    });
+    return { images, frameTimes: labels };
+  } catch (error) {
+    return {
+      images: [],
+      frameTimes: [],
+      _error: error instanceof Error ? error.message : "Frame extraction failed",
+    };
+  }
+}
+
 export async function evaluateArtifact(params: {
   brief: MediaBrief;
   artifact: MediaArtifact;
@@ -38,19 +65,26 @@ export async function evaluateArtifact(params: {
   artifactDescription?: string;
 }): Promise<EvaluationResult> {
   let lastError: Error | null = null;
+  const visualEvidence = await buildVisualEvidence(params.artifact);
+  const hasFrames = visualEvidence.images.length > 0;
+  const visionFallbackError = visualEvidence._error;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       const raw = await llmJson<EvaluationResult>({
-        model: attempt >= 1 ? currentFastModel() : undefined,
+        model: hasFrames ? currentVisionModel() : attempt >= 1 ? currentFastModel() : undefined,
         system: `${CRITIC_SYSTEM_PROMPT}\n\n${CRITIC_SCHEMA}`,
         user: buildCriticUserPrompt({
           brief: params.brief,
           artifact: params.artifact,
           artifactType: params.artifactType ?? params.artifact.type,
           artifactUrl: params.artifact.url,
-          artifactDescription: params.artifactDescription,
+          artifactDescription: visionFallbackError
+            ? `${params.artifactDescription ?? ""}\n\nVisual analysis: frame extraction failed (${visionFallbackError}). Visual scores must rely only on verified media metadata.`.trim()
+            : params.artifactDescription,
+          frameTimes: visualEvidence.frameTimes,
         }),
+        images: hasFrames ? visualEvidence.images : undefined,
         temperature: 0.1,
         maxTokens: 1800,
       });
