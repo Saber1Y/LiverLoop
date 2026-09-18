@@ -53,7 +53,17 @@ export function inferredMediaTypeFromStreams(streams: MediaStreamInfo[]): MediaI
   return "unknown";
 }
 
+const DOWNLOAD_CACHE_TTL_MS = 20 * 60 * 1000;
+const DOWNLOAD_CACHE_MAX_BYTES = 512 * 1024 * 1024;
+const downloadCache = new Map<string, { at: number; buffer: Buffer }>();
+let downloadCacheBytes = 0;
+
 export async function downloadArtifactUrl(url: string): Promise<Buffer> {
+  const cached = downloadCache.get(url);
+  if (cached && Date.now() - cached.at < DOWNLOAD_CACHE_TTL_MS) {
+    return cached.buffer;
+  }
+
   const response = await fetch(url, {
     redirect: "follow",
     signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
@@ -69,7 +79,20 @@ export async function downloadArtifactUrl(url: string): Promise<Buffer> {
   if (arrayBuffer.byteLength > MAX_DOWNLOAD_BYTES) {
     throw new Error(`Media probe rejected artifact larger than ${MAX_DOWNLOAD_BYTES} bytes: ${url}`);
   }
-  return Buffer.from(arrayBuffer);
+  const buffer = Buffer.from(arrayBuffer);
+
+  if (buffer.byteLength <= MAX_DOWNLOAD_BYTES) {
+    while (downloadCacheBytes + buffer.byteLength > DOWNLOAD_CACHE_MAX_BYTES && downloadCache.size > 0) {
+      const oldest = downloadCache.keys().next().value!;
+      const entry = downloadCache.get(oldest)!;
+      downloadCache.delete(oldest);
+      downloadCacheBytes -= entry.buffer.byteLength;
+    }
+    downloadCache.set(url, { at: Date.now(), buffer });
+    downloadCacheBytes += buffer.byteLength;
+  }
+
+  return buffer;
 }
 
 async function analyzeBuffer(buffer: Buffer): Promise<MediaInspection> {

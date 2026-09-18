@@ -7,6 +7,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import ffmpegStatic from "ffmpeg-static";
 import type { LlmImagePart } from "../llm/types";
 import type { MediaArtifactType } from "../domain/media";
+import { downloadArtifactUrl } from "./inspect";
 
 const execFileAsync = promisify(execFile);
 const FFMPEG_TIMEOUT_MS = 60_000;
@@ -25,22 +26,11 @@ function ffmpegExecutable(): string {
 }
 
 async function downloadToTemp(url: string): Promise<{ dir: string; path: string }> {
-  const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(90_000) });
-  if (!response.ok) {
-    throw new Error(`Frame extraction download failed with HTTP ${response.status}`);
-  }
-  const contentLength = Number(response.headers.get("content-length") ?? 0);
-  if (contentLength > 200 * 1024 * 1024) {
-    throw new Error(`Frame extraction rejected artifact larger than 200MB`);
-  }
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.byteLength > 200 * 1024 * 1024) {
-    throw new Error(`Frame extraction rejected artifact larger than 200MB`);
-  }
+  const buffer = await downloadArtifactUrl(url);
   const dir = await mkdtemp(join(tmpdir(), "liverloop-frames-"));
   const containerHint = url.includes(".mp4") ? ".mp4" : url.includes(".webm") ? ".webm" : url.includes(".mov") ? ".mov" : ".bin";
   const path = join(dir, `${randomUUID().slice(0, 8)}${containerHint}`);
-  await writeFile(path, bytes);
+  await writeFile(path, buffer);
   return { dir, path };
 }
 

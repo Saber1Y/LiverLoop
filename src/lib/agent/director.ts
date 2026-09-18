@@ -28,6 +28,15 @@ const PREFERRED_CAPABILITIES: Record<string, string[]> = {
   tool: ["ffmpeg-concat", "ffmpeg-burn-subtitles", "ffmpeg-colorgrade"],
 };
 
+const COMPOSITION_DIMENSIONS = new Set(["cta", "messaging"]);
+const COMPOSITION_ISSUE_KEYWORDS = /(\bcta\b|\blegib\w*|\btext\b|\bspelling\b|\btypo\b|\boverlay\b|\bsupers?\b)/i;
+
+function isSourceGenerationStep(stepId: string, steps: { id: string; capability: string }[]): boolean {
+  const cap = steps.find((s) => s.id === stepId)?.capability;
+  if (!cap) return false;
+  return !cap.startsWith("ffmpeg");
+}
+
 function summarizeCapabilities(caps: LivepeerCapability[]): string {
   const grouped = new Map<string, LivepeerCapability[]>();
   for (const capability of caps) {
@@ -173,7 +182,7 @@ export async function createProductionPlan(params: {
   for (let i = 0; i < MAX_PLAN_ATTEMPTS; i += 1) {
     try {
       const raw = await llmJson<ProductionPlan>({
-        model: i >= 2 ? currentFastModel() : undefined,
+        model: currentFastModel(),
         system: `${DIRECTOR_SYSTEM_PROMPT}\n\n${schemaHint}`,
         user: userPrompt,
         temperature: 0.3,
@@ -208,7 +217,7 @@ export async function directorDecide(params: {
   for (let i = 0; i < MAX_DECISION_ATTEMPTS; i += 1) {
     try {
       const raw = await llmJson<DirectorDecision>({
-        model: i >= 2 ? currentFastModel() : undefined,
+        model: currentFastModel(),
         system: `${DIRECTOR_CORRECTION_SYSTEM_PROMPT}\n\n${DIRECTOR_CORRECTION_SCHEMA}`,
         user: buildCorrectionUserPrompt({
           planSteps: params.steps,
@@ -220,9 +229,30 @@ export async function directorDecide(params: {
       });
       const decision = DirectorDecisionSchema.parse(raw);
       const validStepIds = new Set(params.steps.map((s) => s.id));
-      const redo = decision.stepsToRedo.filter((id) => validStepIds.has(id));
-      const keep = decision.stepsToKeep.filter((id) => validStepIds.has(id));
+      let redo = decision.stepsToRedo.filter((id) => validStepIds.has(id));
 
+      const evaluation = params.evaluation as { dimensions?: { name?: string; score?: number }[]; issues?: { description?: string }[] } | undefined;
+      const failedDims = (evaluation?.dimensions ?? []).filter((d) => (d.score ?? 10) < 5);
+      const compositionOnly =
+        failedDims.length > 0 &&
+        failedDims.every((d) => d.name !== undefined && COMPOSITION_DIMENSIONS.has(d.name));
+      const hasTextIssue = (evaluation?.issues ?? []).some((issue) =>
+        COMPOSITION_ISSUE_KEYWORDS.test(issue.description ?? ""),
+      );
+
+      if (compositionOnly && hasTextIssue) {
+        const surgicalRedo = redo.filter((id) => !isSourceGenerationStep(id, params.steps));
+        if (surgicalRedo.length > 0) {
+          redo = surgicalRedo;
+        } else if (redo.length > 0) {
+          const lastStep = params.steps[params.steps.length - 1];
+          if (lastStep && !isSourceGenerationStep(lastStep.id, params.steps)) {
+            redo = [lastStep.id];
+          }
+        }
+      }
+
+      const keep = params.steps.map((s) => s.id).filter((id) => !redo.includes(id));
       const costOfRedo = redo.reduce((sum, id) => {
         const cap = params.steps.find((s) => s.id === id)?.capability;
         return sum + (cap ? (costByCapability[cap] ?? 0) : 0);

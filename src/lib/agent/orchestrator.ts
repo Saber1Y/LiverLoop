@@ -149,6 +149,38 @@ function multiInputInputs(
   return inputs;
 }
 
+function executionInputs(step: PlanStep, artifacts: Map<string, StepArtifact>) {
+  const inputArtifacts = step.inputRefs
+    .map((inputRef) => artifacts.get(inputRef))
+    .filter((artifact): artifact is StepArtifact => Boolean(artifact?.url));
+  const sourceArtifact = inputArtifacts.find(
+    (artifact) => artifact.url && (step.capability !== "ltx-25-i2v-fast" || artifact.type === "image"),
+  );
+  return { inputArtifacts, sourceArtifact };
+}
+
+function planBatches(steps: PlanStep[]): PlanStep[][] {
+  const depth = new Map<string, number>();
+  for (const step of steps) {
+    let d = 1;
+    for (const ref of step.inputRefs) {
+      const refDepth = depth.get(ref);
+      if (refDepth !== undefined) d = Math.max(d, refDepth + 1);
+    }
+    depth.set(step.id, d);
+  }
+  const groups = new Map<number, PlanStep[]>();
+  for (const step of steps) {
+    const d = depth.get(step.id)!;
+    const group = groups.get(d) ?? [];
+    group.push(step);
+    groups.set(d, group);
+  }
+  return [...groups.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, group]) => group);
+}
+
 async function executeSteps(params: {
   runId: string;
   plan: ProductionPlan;
@@ -157,21 +189,15 @@ async function executeSteps(params: {
   existing: Map<string, StepArtifact>;
 }): Promise<{ artifacts: StepArtifact[]; cost: number }> {
   const artifacts = new Map(params.existing);
-  let cost = 0;
 
-  for (const step of params.stepsToRun) {
+  const runStep = async (step: PlanStep): Promise<StepArtifact> => {
     let executionStep = step;
     let capability = params.capabilities.find((item) => item.name === step.capability);
     if (!capability) {
       throw new Error(`Livepeer capability is no longer available: ${step.capability}`);
     }
 
-    const sourceArtifact = step.inputRefs
-      .map((inputRef) => artifacts.get(inputRef))
-      .find((artifact) => artifact?.url && (step.capability !== "ltx-25-i2v-fast" || artifact.type === "image"));
-    const inputArtifacts = step.inputRefs
-      .map((inputRef) => artifacts.get(inputRef))
-      .filter((artifact): artifact is StepArtifact => Boolean(artifact?.url));
+    const { inputArtifacts, sourceArtifact } = executionInputs(step, artifacts);
 
     if (step.capability === "ltx-25-i2v-fast" && sourceArtifact?.type !== "image") {
       const fallback = params.capabilities.find((item) => item.name === "ltx-25-t2v-fast");
@@ -305,7 +331,6 @@ async function executeSteps(params: {
       },
     };
     artifacts.set(step.id, stepArtifact);
-    cost += result.cost_usd_estimated ?? 0;
     recordEvent({
       runId: params.runId,
       type: "JOB_COMPLETED",
@@ -316,6 +341,21 @@ async function executeSteps(params: {
       type: "ARTIFACT_CREATED",
       data: { stepId: step.id, url: result.outputUrl, type: stepArtifact.type },
     });
+    return stepArtifact;
+  };
+
+  let cost = 0;
+  for (const batch of planBatches(params.stepsToRun)) {
+    const results = await Promise.allSettled(batch.map(runStep));
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0) {
+      const first = failures[0] as PromiseRejectedResult;
+      throw first.reason;
+    }
+    cost += results.reduce(
+      (sum, r) => sum + (r.status === "fulfilled" ? (r.value.metadata.costUsd as number | undefined ?? 0) : 0),
+      0,
+    );
   }
 
   return { artifacts: [...artifacts.values()], cost };

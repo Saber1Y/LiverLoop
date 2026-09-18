@@ -67,6 +67,7 @@ Rules:
 - "stepsToRedo" must be a subset of plan step ids.
 - "stepsToKeep" must be the complement.
 - If the issues are isolated (e.g. only CTA) prefer targeted_retry over full_retry.
+- Avoid regenerating expensive source generation steps (video/audio/image generators like ltx-*, minimax-*, tts) unless the failed dimension is the source content itself (e.g. visual quality, pacing, audio content). For composition or CTA legibility failures, redo only the fast ffmpeg assembly steps (ffmpeg-concat, ffmpeg-mux, ffmpeg-burn-subtitles).
 - Only use full_retry if multiple unrelated dimensions failed badly (< 5).
 - Abandon only when retries cannot fix the brief (e.g. fundamentally impossible request).
 - estimatedCost: estimate in USD using the per-capability costs provided.
