@@ -4,6 +4,7 @@ import { LlmError } from "./types";
 
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 export const DEFAULT_MODEL = "nex-agi/nex-n2.5-pro:free";
+export const DEFAULT_FAST_MODEL = "openai/gpt-4o-mini";
 
 let client: OpenAI | null = null;
 
@@ -27,6 +28,10 @@ export function getLlmClient(): OpenAI {
 
 export function currentModel(): string {
   return process.env.OPENROUTER_MODEL ?? DEFAULT_MODEL;
+}
+
+export function currentFastModel(): string {
+  return process.env.OPENROUTER_FAST_MODEL ?? DEFAULT_FAST_MODEL;
 }
 
 function stripCodeFences(input: string): string {
