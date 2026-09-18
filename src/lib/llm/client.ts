@@ -5,6 +5,7 @@ import { LlmError } from "./types";
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 export const DEFAULT_MODEL = "nex-agi/nex-n2.5-pro:free";
 export const DEFAULT_FAST_MODEL = "openai/gpt-4o-mini";
+export const DEFAULT_VISION_MODEL = "openai/gpt-4o-mini";
 
 let client: OpenAI | null = null;
 
@@ -34,6 +35,10 @@ export function currentFastModel(): string {
   return process.env.OPENROUTER_FAST_MODEL ?? DEFAULT_FAST_MODEL;
 }
 
+export function currentVisionModel(): string {
+  return process.env.OPENROUTER_VISION_MODEL ?? process.env.OPENROUTER_FAST_MODEL ?? DEFAULT_VISION_MODEL;
+}
+
 function stripCodeFences(input: string): string {
   const trimmed = input.trim();
   const fenceMatch = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
@@ -56,7 +61,20 @@ export async function llmComplete(options: LlmCompleteOptions): Promise<LlmRespo
   if (options.messages) {
     messages.push(...options.messages);
   }
-  if (options.user) {
+  if (options.images && options.images.length > 0) {
+    const textContent = options.user ?? "";
+    const content: OpenAI.Chat.ChatCompletionContentPart[] = [];
+    if (textContent) {
+      content.push({ type: "text", text: textContent });
+    }
+    for (const image of options.images) {
+      content.push({
+        type: "image_url",
+        image_url: { url: image.dataUrl, detail: "low" },
+      });
+    }
+    messages.push({ role: "user", content });
+  } else if (options.user) {
     messages.push({ role: "user", content: options.user });
   }
 

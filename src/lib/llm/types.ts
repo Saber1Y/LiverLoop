@@ -3,10 +3,16 @@ export interface LlmMessage {
   content: string;
 }
 
+export interface LlmImagePart {
+  dataUrl: string;
+  label?: string;
+}
+
 export interface LlmCompleteOptions {
   system?: string;
   messages?: LlmMessage[];
   user?: string;
+  images?: LlmImagePart[];
   json?: boolean;
   temperature?: number;
   maxTokens?: number;
