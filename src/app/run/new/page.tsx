@@ -22,7 +22,7 @@ import {
 
 type RunSnapshot = {
   run: { id: string; status: string; totalCost: number };
-  events: { type: string; data: Record<string, unknown> }[];
+  events: { id: string; type: string; data: Record<string, unknown>; createdAt: string }[];
   versions: {
     artifacts: { type: string; url: string }[];
     evaluation: { dimensions: { name: string; score: number }[] } | null;
@@ -116,20 +116,66 @@ export default function WorkspacePage() {
 
   useEffect(() => {
     if (!runId) return;
-    let active = true;
-    const poll = async () => {
-      const response = await fetch(`/api/run/${runId}`, { cache: "no-store" });
-      if (!response.ok || !active) return;
-      const next = await response.json() as RunSnapshot;
-      setSnapshot(next);
-      if (next.run.status === "completed") setRunState("complete");
-      else if (next.run.status === "improving") setRunState("fixing");
-       else if (next.run.status === "failed") setRunState("failed");
+    const applyRunStatus = (run: RunSnapshot["run"]) => {
+      setSnapshot((prev) => (prev ? { ...prev, run } : prev));
+      if (run.status === "completed") setRunState("complete");
+      else if (run.status === "failed") setRunState("failed");
+      else if (run.status === "improving") setRunState("fixing");
       else setRunState("evaluating");
     };
-    void poll();
-    const interval = window.setInterval(() => void poll(), 4000);
-    return () => { active = false; window.clearInterval(interval); };
+    const applyEvent = (event: RunSnapshot["events"][number]) => {
+      setSnapshot((prev) => {
+        if (!prev) return prev;
+        if (prev.events.some((item) => item.id === event.id)) return prev;
+        return { ...prev, events: [event, ...prev.events] };
+      });
+    };
+
+    let stream: EventSource | null = null;
+    let fallbackTimer: number | null = null;
+
+    const startPollFallback = () => {
+      if (fallbackTimer !== null) return;
+      fallbackTimer = window.setInterval(async () => {
+        const response = await fetch(`/api/run/${runId}`, { cache: "no-store" });
+        if (!response.ok) return;
+        const next = await response.json() as RunSnapshot;
+        setSnapshot((prev) => {
+          if (!prev) return next;
+          const known = new Set(prev.events.map((item) => item.id));
+          return { ...next, events: [...next.events.filter((item) => !known.has(item.id)), ...prev.events] };
+        });
+        applyRunStatus(next.run);
+      }, 5000);
+    };
+    const stopPollFallback = () => {
+      if (fallbackTimer !== null) { window.clearInterval(fallbackTimer); fallbackTimer = null; }
+    };
+
+    const connect = () => {
+      stream?.close();
+      stream = new EventSource(`/api/run/${runId}/stream`);
+      stream.addEventListener("snapshot", (event) => {
+        const next = JSON.parse((event as MessageEvent).data) as RunSnapshot;
+        setSnapshot(next);
+        applyRunStatus(next.run);
+        stopPollFallback();
+      });
+      stream.addEventListener("status", (event) => {
+        const payload = JSON.parse((event as MessageEvent).data) as { run: RunSnapshot["run"] };
+        applyRunStatus(payload.run);
+      });
+      stream.addEventListener("event", (event) => {
+        applyEvent(JSON.parse((event as MessageEvent).data));
+      });
+      stream.addEventListener("close", () => stream?.close());
+      stream.onerror = () => {
+        if (stream?.readyState === EventSource.CLOSED) startPollFallback();
+      };
+    };
+
+    connect();
+    return () => { stream?.close(); stopPollFallback(); };
   }, [runId]);
 
   const triggerImprovement = async (e: React.FormEvent) => {
