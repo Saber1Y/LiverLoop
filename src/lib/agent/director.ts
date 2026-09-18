@@ -1,10 +1,13 @@
 import { llmJson } from "../llm/client";
+import { currentFastModel } from "../llm/client";
 import type { ProductionPlan, DirectorDecision } from "../domain/plan";
 import { ProductionPlan as ProductionPlanSchema, DirectorDecision as DirectorDecisionSchema } from "../domain/plan";
 import type { MediaBrief } from "../domain/run";
 import type { MediaRunKnowledgeAsset } from "../domain/knowledge";
+import type { MediaArtifactType } from "../domain/media";
 import type { LivepeerCapability } from "../livepeer/types";
 import { classifyCapability } from "../livepeer/capabilities";
+import { getCapabilityContract, resolveContractOutputType, summarizeCapabilityContracts } from "../livepeer/contracts";
 import { LlmError } from "../llm/types";
 import {
   DIRECTOR_SYSTEM_PROMPT,
@@ -68,15 +71,96 @@ function capabilityCostMap(
   return map;
 }
 
+function dedupeLessons(lessons: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const lesson of lessons) {
+    const normalized = lesson.toLowerCase().replace(/\s+/g, " ").trim();
+    if (!normalized || seen.has(normalized)) continue;
+    if (result.some((existing) => existing.toLowerCase().replace(/\s+/g, " ").includes(normalized.slice(0, 40)))) continue;
+    seen.add(normalized);
+    result.push(lesson);
+    if (result.length >= 10) break;
+  }
+  return result;
+}
+
+export function validatePlanAgainstContracts(
+  plan: ProductionPlan,
+  capabilities: LivepeerCapability[],
+): { ok: boolean; errors: string[] } {
+  const errors: string[] = [];
+  const available = new Set(capabilities.map((cap) => cap.name));
+
+  const stepOutputTypes = new Map<string, MediaArtifactType>();
+  for (const step of plan.steps) {
+    const output = resolveContractOutputType(step.capability);
+    if (output) stepOutputTypes.set(step.id, output);
+  }
+
+  for (const step of plan.steps) {
+    if (!available.has(step.capability)) {
+      errors.push(`Step "${step.id}" uses capability "${step.capability}" which is not available on Livepeer.`);
+      continue;
+    }
+    const contract = getCapabilityContract(step.capability);
+    if (!contract) continue;
+
+    if (contract.consumes.length > 0 && step.inputRefs.length < contract.consumes.length) {
+      errors.push(`Step "${step.id}" (${step.capability}) consumes [${contract.consumes.join(" + ")}] but declares no inputRefs.`);
+      continue;
+    }
+    if (contract.multiInput) {
+      if (step.inputRefs.length < 2) {
+        errors.push(`Step "${step.id}" (${step.capability}) needs at least 2 inputRefs to join multiple clips.`);
+        continue;
+      }
+      const provided = step.inputRefs.map((r) => stepOutputTypes.get(r) ?? "unknown");
+      if (provided.some((t) => !contract.consumes.includes(t as MediaArtifactType))) {
+        errors.push(`Step "${step.id}" (${step.capability}) joins [${contract.consumes.join(", ")}] clips but got [${provided.join(", ")}].`);
+        continue;
+      }
+    } else if (step.inputRefs.length > contract.consumes.length) {
+      const provided = step.inputRefs.map((r) => stepOutputTypes.get(r) ?? "unknown").join(", ");
+      errors.push(
+        `Step "${step.id}" (${step.capability}) declares ${step.inputRefs.length} inputRefs but its contract consumes exactly ${contract.consumes.length}: [${contract.consumes.join(" + ")}]. To join multiple clips, add an ffmpeg-concat step before ${step.id}. Inputs provided: [${provided}].`,
+      );
+      continue;
+    } else if (step.inputRefs.length === contract.consumes.length) {
+      if (contract.consumes.length > 0) {
+        const provided = step.inputRefs.map((r) => stepOutputTypes.get(r) ?? "unknown");
+        const mismatches: string[] = [];
+        for (let i = 0; i < contract.consumes.length; i += 1) {
+          if (contract.consumes[i] !== provided[i]) {
+            mismatches.push(`inputRef ${step.inputRefs[i]} (${provided[i]}) does not match expected ${contract.consumes[i]}`);
+          }
+        }
+        if (mismatches.length > 0) {
+          errors.push(`Step "${step.id}" (${step.capability}) input type mismatch: ${mismatches.join("; ")}. Use ffmpeg-concat to join multiple video clips before muxing.`);
+          continue;
+        }
+      }
+    }
+
+    const allowed = new Set(Object.keys(contract.params));
+    const unknownParams = Object.keys(step.params).filter((key) => !allowed.has(key));
+    if (unknownParams.length > 0) {
+      errors.push(`Step "${step.id}" (${step.capability}) used params not in its contract: ${unknownParams.join(", ")}.`);
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
 export async function createProductionPlan(params: {
   brief: MediaBrief;
   capabilities: LivepeerCapability[];
   knowledge: MediaRunKnowledgeAsset[];
 }): Promise<{ plan: ProductionPlan; knowledgeUsed: string[] }> {
-  const lessons = params.knowledge.flatMap((a) => a.lessons);
-  const userPrompt = buildPlannerUserPrompt({
+  const lessons = dedupeLessons(params.knowledge.flatMap((a) => a.lessons));
+  let userPrompt = buildPlannerUserPrompt({
     brief: params.brief,
     capabilitiesSummary: summarizeCapabilities(params.capabilities),
+    capabilityContracts: summarizeCapabilityContracts(params.capabilities),
     knowledgeLessons: lessons,
   });
 
@@ -89,12 +173,19 @@ export async function createProductionPlan(params: {
   for (let i = 0; i < MAX_PLAN_ATTEMPTS; i += 1) {
     try {
       const raw = await llmJson<ProductionPlan>({
+        model: i >= 2 ? currentFastModel() : undefined,
         system: `${DIRECTOR_SYSTEM_PROMPT}\n\n${schemaHint}`,
         user: userPrompt,
         temperature: 0.3,
-        maxTokens: 2400,
+        maxTokens: 3400,
       });
       const plan = ProductionPlanSchema.parse(raw);
+      const contractCheck = validatePlanAgainstContracts(plan, params.capabilities);
+      if (!contractCheck.ok) {
+        lastError = new Error(contractCheck.errors.join(" "));
+        userPrompt = `${userPrompt}\n\nYour previous plan was rejected for these contract violations. Fix ALL of them:\n${contractCheck.errors.map((error) => `- ${error}`).join("\n")}`;
+        continue;
+      }
       return { plan, knowledgeUsed: plan.knowledgeUsed ?? [] };
     } catch (err) {
       lastError = err as Error;
@@ -117,6 +208,7 @@ export async function directorDecide(params: {
   for (let i = 0; i < MAX_DECISION_ATTEMPTS; i += 1) {
     try {
       const raw = await llmJson<DirectorDecision>({
+        model: i >= 2 ? currentFastModel() : undefined,
         system: `${DIRECTOR_CORRECTION_SYSTEM_PROMPT}\n\n${DIRECTOR_CORRECTION_SCHEMA}`,
         user: buildCorrectionUserPrompt({
           planSteps: params.steps,
@@ -157,8 +249,10 @@ export function extractKnowledgeLessons(params: {
   brief: unknown;
   iterations: unknown;
   finalVersionNumber: number;
+  fast?: boolean;
 }): Promise<{ lessons: string[] }> {
   return llmJson<{ lessons: string[] }>({
+    model: params.fast === false ? undefined : currentFastModel(),
     system:
       "You are the knowledge extractor for a media production system. You convert completed runs into durable, reusable lessons. Reply ONLY with valid JSON matching { \"lessons\": [...] }.",
     user: buildKnowledgeLessonPrompt({
