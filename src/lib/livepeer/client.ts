@@ -49,7 +49,7 @@ async function jsonRpc(
       method: "POST",
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(90_000),
+      signal: AbortSignal.timeout(150_000),
     });
   } catch {
     throw new Error(LIVE_PEER_ERRORS.UNAVAILABLE);
