@@ -68,6 +68,9 @@ Rules:
 - "stepsToKeep" must be the complement.
 - If the issues are isolated (e.g. only CTA) prefer targeted_retry over full_retry.
 - Avoid regenerating expensive source generation steps (video/audio/image generators like ltx-*, minimax-*, tts) unless the failed dimension is the source content itself (e.g. visual quality, pacing, audio content). For composition or CTA legibility failures, redo only the fast ffmpeg assembly steps (ffmpeg-concat, ffmpeg-mux, ffmpeg-burn-subtitles).
+- "paramOverrides" lets you change params of steps you put in stepsToRedo without regenerating anything upstream (e.g. move burn cues earlier, raise font_size, change position).
+- "stepsToInsert" lets you add a NEW corrective step at the end of the pipeline consuming the latest output. Use it when redoing an existing step with the same params cannot fix the problem: an over-length video is fixed by inserting ffmpeg-trim with start 0 and duration equal to the brief duration; a small or illegible CTA is fixed by inserting a second ffmpeg-burn-subtitles with a larger font_size and a clear position (bottom|top).
+- Apply the smallest useful intervention: param overrides first, then targeted redo, then insert a corrective step. Never regenerate source clips for something an assembly step can fix.
 - Only use full_retry if multiple unrelated dimensions failed badly (< 5).
 - Abandon only when retries cannot fix the brief (e.g. fundamentally impossible request).
 - estimatedCost: estimate in USD using the per-capability costs provided.
@@ -78,9 +81,18 @@ export const DIRECTOR_CORRECTION_SCHEMA = `{
   "reason": "string explaining the decision",
   "stepsToRedo": ["step ids to regenerate"],
   "stepsToKeep": ["step ids that stay untouched"],
+  "stepsToInsert": [{"id": "unique new step id", "capability": "available capability", "purpose": "why", "inputRefs": ["step id this consumes"], "params": {"contract params only"}}],
+  "paramOverrides": {"stepIdInRedo": {"contract param": value}},
   "estimatedCost": number,
   "fullRegenerationCost": number
 }`;
+
+export const DIRECTOR_DECISION_INPUTS_HEADER = `Decision Inputs:
+- Plan steps (id, capability, purpose, inputRefs, params).
+- Evaluation of the failed version (dimension scores, issues, decision).
+- Plan constraints (duration, format, cta, etc.).
+- Per-step runtime costs (USD).
+- Available Livepeer capabilities (subset relevant to fixes).`;
 
 export const CRITIC_SYSTEM_PROMPT = `You are the Critic in Liverloop, an autonomous multimodal media production system.
 
@@ -171,9 +183,19 @@ export function buildCorrectionUserPrompt(params: {
   evaluation: unknown;
   versionNumber: number;
   iterationCosts: Record<string, number>;
+  constraints?: unknown;
+  capabilitiesSummary?: string;
 }): string {
-  return `PLAN STEPS:
+  return `${DIRECTOR_DECISION_INPUTS_HEADER}
+
+PLAN STEPS:
 ${JSON.stringify(params.planSteps, null, 2)}
+
+PLAN CONSTRAINTS:
+${JSON.stringify(params.constraints, null, 2)}
+
+AVAILABLE LIVEPEER CAPABILITIES (subset relevant to fixes):
+${params.capabilitiesSummary ?? "none"}
 
 EVALUATION OF VERSION ${params.versionNumber}:
 ${JSON.stringify(params.evaluation, null, 2)}

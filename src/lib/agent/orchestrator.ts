@@ -1,5 +1,5 @@
 import type { MediaArtifact, MediaArtifactType } from "../domain/media";
-import { MAX_ITERATIONS, type ProductionPlan, type PlanStep } from "../domain/plan";
+import { MAX_ITERATIONS, type DirectorDecision, type ProductionPlan, type PlanStep } from "../domain/plan";
 import { updateRun, getRun } from "../ledger/runs";
 import { recordEvent } from "../ledger/events";
 import {
@@ -425,9 +425,10 @@ export async function executeRun(runId: string): Promise<void> {
     recordEvent({ runId, type: "PLAN_CREATED", data: { plan } });
 
     let totalCost = 0;
-    const currentPlan = plan;
+    let currentPlan = plan;
     let existing = new Map<string, StepArtifact>();
     let finalVersionId: string | null = null;
+    let lastDecision: DirectorDecision | null = null;
 
     for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration += 1) {
       updateRun(run.id, {
@@ -438,9 +439,36 @@ export async function executeRun(runId: string): Promise<void> {
         recordEvent({ runId, type: "RETRY_STARTED", versionNumber: iteration, data: { iteration } });
       }
 
-      const stepsToRun = iteration === 1
-        ? currentPlan.steps
-        : currentPlan.steps.filter((step) => !existing.has(step.id));
+      let stepsToRun: PlanStep[];
+      if (iteration === 1) {
+        stepsToRun = currentPlan.steps;
+      } else {
+        stepsToRun = currentPlan.steps.filter((step) => !existing.has(step.id));
+        if (lastDecision) {
+          const previous = lastDecision;
+          if (previous.paramOverrides) {
+            stepsToRun = stepsToRun.map((step) => {
+              const overrides = previous.paramOverrides[step.id];
+              return overrides && Object.keys(overrides).length > 0
+                ? { ...step, params: { ...step.params, ...overrides } }
+                : step;
+            });
+          }
+          const inserted = (previous.stepsToInsert ?? []).filter(
+            (newStep) =>
+              newStep.id &&
+              !currentPlan.steps.some((step) => step.id === newStep.id) &&
+              capabilities.some((cap) => cap.name === newStep.capability) &&
+              newStep.inputRefs.every((ref) => currentPlan.steps.some((step) => step.id === ref)),
+          );
+          if (inserted.length > 0) {
+            currentPlan = { ...currentPlan, steps: [...currentPlan.steps, ...inserted] };
+            stepsToRun = [...stepsToRun, ...inserted];
+            recordEvent({ runId, versionNumber: iteration, type: "STEPS_INSERTED", data: { inserted } });
+          }
+        }
+      }
+
       const executed = await executeSteps({
         runId,
         plan: currentPlan,
@@ -494,14 +522,22 @@ export async function executeRun(runId: string): Promise<void> {
       }
 
       const decision = await directorDecide({
-        steps: currentPlan.steps.map((step) => ({ id: step.id, capability: step.capability })),
+        steps: currentPlan.steps.map((step) => ({
+          id: step.id,
+          capability: step.capability,
+          purpose: step.purpose,
+          inputRefs: step.inputRefs,
+          params: step.params,
+        })),
         evaluation,
         versionNumber: iteration,
         capabilityCosts: capabilities,
         iterationCosts: Object.fromEntries(
           version.artifacts.map((artifact) => [artifact.capability, Number(artifact.metadata.costUsd ?? 0)]),
         ),
+        constraints: currentPlan.constraints,
       });
+      lastDecision = decision;
       recordEvent({ runId, versionNumber: iteration, type: "DIRECTOR_DECISION", data: { decision } });
 
       if (decision.action === "abandon" || decision.action === "pass") {

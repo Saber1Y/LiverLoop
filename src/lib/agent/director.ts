@@ -205,11 +205,12 @@ export async function createProductionPlan(params: {
 }
 
 export async function directorDecide(params: {
-  steps: { id: string; capability: string }[];
+  steps: { id: string; capability: string; purpose?: string; inputRefs?: string[]; params?: Record<string, unknown> }[];
   evaluation: unknown;
   versionNumber: number;
   capabilityCosts: LivepeerCapability[];
   iterationCosts: Record<string, number>;
+  constraints?: Record<string, unknown>;
 }): Promise<DirectorDecision> {
   const costByCapability = capabilityCostMap(params.steps, params.capabilityCosts);
 
@@ -224,6 +225,8 @@ export async function directorDecide(params: {
           evaluation: params.evaluation,
           versionNumber: params.versionNumber,
           iterationCosts: params.iterationCosts,
+          constraints: params.constraints,
+          capabilitiesSummary: summarizeCapabilityContracts(params.capabilityCosts),
         }),
         temperature: 0.2,
       });

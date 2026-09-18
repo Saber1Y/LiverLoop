@@ -30,6 +30,8 @@ export const DirectorDecision = z.object({
   reason: z.string(),
   stepsToRedo: z.array(z.string()).default([]),
   stepsToKeep: z.array(z.string()).default([]),
+  stepsToInsert: z.array(PlanStep).default([]),
+  paramOverrides: z.record(z.string(), z.record(z.string(), z.unknown())).default({}),
   estimatedCost: z.number().nonnegative().optional(),
   fullRegenerationCost: z.number().nonnegative().optional(),
 });
