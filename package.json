@@ -20,6 +20,7 @@
     "drizzle-orm": "^0.45.2",
     "framer-motion": "^13.2.0",
     "lucide-react": "^1.45.0",
+    "mediainfo.js": "^0.3.7",
     "nanoid": "^5.1.16",
     "next": "16.3.4",
     "openai": "^6.49.0",
