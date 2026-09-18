@@ -156,6 +156,17 @@ export function validatePlanAgainstContracts(
     if (unknownParams.length > 0) {
       errors.push(`Step "${step.id}" (${step.capability}) used params not in its contract: ${unknownParams.join(", ")}.`);
     }
+    for (const [key, spec] of Object.entries(contract.params)) {
+      if (!spec.allowed || !(key in step.params)) continue;
+      const value = step.params[key];
+      if (!spec.allowed.includes(value as string | number)) {
+        const accepted = spec.allowed.map((v) => JSON.stringify(v)).join(", ");
+        errors.push(
+          `Step "${step.id}" (${step.capability}) param "${key}" = ${JSON.stringify(value)} is not accepted; accepted values are: ${accepted}. ` +
+            `Adjust the plan so every clip uses an accepted duration, or add an ffmpeg-trim step to reach the exact brief duration.`,
+        );
+      }
+    }
   }
   return { ok: errors.length === 0, errors };
 }

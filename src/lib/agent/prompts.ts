@@ -19,8 +19,8 @@ Rules:
 - When a brief needs both a video and audio (voiceover or music), assemble the final result with ffmpeg-mux, never with ffmpeg-audio-mix.
 - Prefer inexpensive, proven capabilities when they satisfy the step.
 - When ltx-25-i2v-fast is available, prefer it for a brief that needs a stable image-to-video render.
-- For a requested duration of 20 seconds, prefer ltx-25-t2v-fast or ltx-25-i2v-fast. Do not use ltx-25-t2v-pro for 20 seconds because its accepted durations are 6, 8, 10, and auto.
-- ltx video generation clips are limited to about 10 seconds each. When the brief duration is longer than 10 seconds, generate multiple clips and join them with an ffmpeg-concat step (inputRefs = all clip ids) BEFORE ffmpeg-mux adds the audio track. Never point ffmpeg-mux at more than one video input; it consumes exactly one video + one audio.
+- ltx-25-t2v-fast and ltx-25-t2v-pro accept ONLY these durations: 6, 8, 10, or auto (auto ≈ 10.3s). Never put any other number for a ltx duration (e.g. 7 is invalid). ltx clips are ~10 seconds max each, so for a brief longer than 10 seconds generate multiple clips and join them with an ffmpeg-concat step (inputRefs = all clip ids) BEFORE ffmpeg-mux adds the audio track. Never point ffmpeg-mux at more than one video input; it consumes exactly one video + one audio.
+- Actual ltx output length roughly equals the requested duration. If NO combination of accepted clip durations exactly equals the brief duration, pick the combination whose nominal total is CLOSEST TO but NOT BELOW the brief duration (over-length is fixable later; under-length usually is not). Do not invent fractional or out-of-set clip durations to force an exact sum.
 - If the brief specifies a format/duration/CTA, reflect that in constraints.
 - Use "inputRefs" to declare dependencies between steps (paste the id of the step whose output this step consumes).
 - "knowledgeUsed" must list every lesson string you incorporated and say how it changed the plan.

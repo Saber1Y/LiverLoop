@@ -6,6 +6,7 @@ export type ParamSpec = {
   type: "string" | "number" | "boolean" | "array" | "object";
   required?: boolean;
   note?: string;
+  allowed?: (string | number)[];
 };
 
 export type CapabilityContract = {
@@ -24,7 +25,7 @@ const CONTRACTS: Record<string, CapabilityContract> = {
     params: {
       prompt: { type: "string", required: true },
       resolution: { type: "string", note: "720p recommended; never 1080p for short clips" },
-      duration: { type: "number", note: "seconds; accepted 6, 8, 10 or auto" },
+      duration: { type: "number", note: "seconds; accepted 6, 8, 10 or auto", allowed: [6, 8, 10, "auto"] },
       aspect_ratio: { type: "string", note: "e.g. 9:16, 16:9, 1:1" },
     },
   },
@@ -36,7 +37,7 @@ const CONTRACTS: Record<string, CapabilityContract> = {
       prompt: { type: "string", required: true },
       image: { type: "string", note: "URL of the input image" },
       resolution: { type: "string", note: "720p recommended" },
-      duration: { type: "number", note: "seconds; accepted 6, 8, 10 or auto" },
+      duration: { type: "number", note: "seconds; accepted 6, 8, 10 or auto", allowed: [6, 8, 10, "auto"] },
       aspect_ratio: { type: "string" },
       camera_motion: { type: "string", note: "dolly_in|dolly_out|static|... (normalized)" },
     },
