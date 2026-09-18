@@ -1,4 +1,4 @@
-import type { MediaArtifactType } from "../domain/media";
+import type { MediaArtifact, MediaArtifactType } from "../domain/media";
 import { MAX_ITERATIONS, type ProductionPlan, type PlanStep } from "../domain/plan";
 import { updateRun, getRun } from "../ledger/runs";
 import { recordEvent } from "../ledger/events";
@@ -11,6 +11,8 @@ import {
 import { getCapabilities, classifyCapability } from "../livepeer/capabilities";
 import { runMediaJob } from "../livepeer/jobs";
 import type { LivepeerCapability } from "../livepeer/types";
+import { inspectArtifactUrl, expectedTypeForInspection, type MediaInspection } from "../media/inspect";
+import { getCapabilityContract } from "../livepeer/contracts";
 import { aggregateEvaluations, evaluateArtifact } from "./critic";
 import { createProductionPlan, directorDecide } from "./director";
 import { getPublishedKnowledgeAssets } from "../knowledge/repository";
@@ -56,7 +58,16 @@ function normalizeCapabilityInputs(
   step: PlanStep,
   constraints: Record<string, unknown> = {},
 ): Record<string, unknown> {
-  const inputs = { ...step.params };
+  const contract = getCapabilityContract(step.capability);
+  const inputs: Record<string, unknown> = {};
+  if (contract) {
+    const allowed = new Set(Object.keys(contract.params));
+    for (const [key, value] of Object.entries(step.params)) {
+      if (allowed.has(key) && value !== undefined && value !== null) inputs[key] = value;
+    }
+  } else {
+    Object.assign(inputs, step.params);
+  }
   if (/^ltx-25-(i2v|t2v)-fast$/.test(step.capability) && !inputs.resolution) {
     inputs.resolution = "720p";
   }
@@ -121,7 +132,7 @@ function multiInputInputs(
   constraints: Record<string, unknown>,
 ): Record<string, unknown> {
   const inputs = normalizeCapabilityInputs(step, constraints);
-  const urls = artifacts.map((artifact) => ({ url: artifact.url }));
+  const urls = artifacts.filter((artifact) => artifact.url).map((artifact) => artifact.url);
   if (step.capability === "ffmpeg-audio-mix") {
     inputs.tracks = urls;
   } else if (step.capability === "ffmpeg-mux") {
@@ -130,7 +141,10 @@ function multiInputInputs(
     if (video) inputs.video_url = video.url;
     if (audio) inputs.audio_url = audio.url;
   } else if (step.capability === "ffmpeg-concat") {
-    inputs.clips = urls;
+    const clips = artifacts
+      .filter((artifact) => artifact.type === "video" && artifact.url)
+      .map((artifact) => artifact.url);
+    inputs.clips = clips.length >= 2 ? clips : urls;
   }
   return inputs;
 }
@@ -177,11 +191,24 @@ async function executeSteps(params: {
       capability = fallback;
     }
 
-    if (executionStep.capability === "ffmpeg-mux" && (!inputArtifacts.some((artifact) => artifact.type === "video") || !inputArtifacts.some((artifact) => artifact.type === "audio"))) {
-      throw new Error("ffmpeg-mux requires one video artifact and one audio artifact.");
+    if (executionStep.capability === "ffmpeg-mux") {
+      const hasVideo = inputArtifacts.some((artifact) => artifact.type === "video");
+      const hasAudio = inputArtifacts.some((artifact) => artifact.type === "audio");
+      if (!hasVideo || !hasAudio) {
+        const actual = inputArtifacts.map((artifact) => `${artifact.stepId}:${artifact.type}`).join(", ");
+        throw new Error(
+          hasVideo && !hasAudio
+            ? "ffmpeg-mux requires an audio artifact alongside the video, but the referenced audio artifact is not actually audio. Cancelling to avoid producing an audio-only result."
+            : `ffmpeg-mux requires one video artifact and one audio artifact. Referenced artifacts: ${actual || "none"}`,
+        );
+      }
     }
     if (executionStep.capability === "ffmpeg-burn-subtitles" && sourceArtifact?.type !== "video") {
-      throw new Error("ffmpeg-burn-subtitles requires a video artifact as its input.");
+      throw new Error(`ffmpeg-burn-subtitles requires a video artifact as its input, but the referenced artifact is ${sourceArtifact?.type ?? "missing"}.`);
+    }
+    if (executionStep.capability === "ffmpeg-concat" && inputArtifacts.some((artifact) => artifact.type !== "video")) {
+      const actual = inputArtifacts.map((artifact) => `${artifact.stepId}:${artifact.type}`).join(", ");
+      throw new Error(`ffmpeg-concat requires video-only inputs, but referenced artifacts are: ${actual}`);
     }
 
     recordEvent({
@@ -196,7 +223,6 @@ async function executeSteps(params: {
     });
 
     const mediaType = classifyCapability(capability);
-    const inlineCapability = new Set(["ltx-25-i2v-fast", "ltx-25-t2v-fast"]);
     recordEvent({
       runId: params.runId,
       type: "JOB_STARTED",
@@ -208,10 +234,8 @@ async function executeSteps(params: {
       prompt: buildStepPrompt(executionStep, params.plan.constraints),
       sourceUrl: sourceArtifact?.url,
       inputs: multiInputInputs(executionStep, inputArtifacts, params.plan.constraints),
-      async: (mediaType === "video" || mediaType === "audio")
-        && Number(params.plan.constraints.duration ?? 0) > 10
-        && !inlineCapability.has(executionStep.capability),
-      timeout: mediaType === "image" ? 90 : 900,
+      async: mediaType === "video" || mediaType === "audio",
+      timeout: 900,
       maxWaitMs: 10 * 60 * 1000,
     });
 
@@ -219,9 +243,49 @@ async function executeSteps(params: {
       throw new Error(result.error ?? `Livepeer did not return an artifact for ${step.id}`);
     }
 
+    const declaredType = artifactTypeFor(result.output_kind, capability);
+
+    let inspection: MediaInspection | null = null;
+    try {
+      inspection = await inspectArtifactUrl(result.outputUrl);
+    } catch (error) {
+      recordEvent({
+        runId: params.runId,
+        type: "MEDIA_INSPECTED",
+        data: {
+          stepId: step.id,
+          ok: false,
+          error: error instanceof Error ? error.message : "Media probe failed",
+        },
+      });
+    }
+
+    const realType = inspection
+      ? expectedTypeForInspection(declaredType, inspection)
+      : declaredType;
+
+    if (inspection?.ok) {
+      recordEvent({
+        runId: params.runId,
+        type: "MEDIA_INSPECTED",
+        data: {
+          stepId: step.id,
+          ok: true,
+          declaredType,
+          actualType: realType,
+          container: inspection.container,
+          durationSec: inspection.durationSec,
+          width: inspection.width,
+          height: inspection.height,
+          streams: inspection.streams,
+          mismatch: declaredType !== realType,
+        },
+      });
+    }
+
     const stepArtifact: StepArtifact = {
       stepId: step.id,
-      type: artifactTypeFor(result.output_kind, capability),
+      type: realType,
       url: result.outputUrl,
       capability: executionStep.capability,
       purpose: step.purpose,
@@ -229,6 +293,15 @@ async function executeSteps(params: {
         costUsd: result.cost_usd_estimated ?? 0,
         outputKind: result.output_kind,
         livepeer: true,
+        mediaInspection: inspection?.ok
+          ? {
+              container: inspection.container,
+              durationSec: inspection.durationSec,
+              width: inspection.width,
+              height: inspection.height,
+              streams: inspection.streams,
+            }
+          : { ok: false, error: inspection?.error },
       },
     };
     artifacts.set(step.id, stepArtifact);
@@ -246,6 +319,24 @@ async function executeSteps(params: {
   }
 
   return { artifacts: [...artifacts.values()], cost };
+}
+
+function selectFinalArtifact(
+  artifacts: MediaArtifact[],
+  plan: { steps: { id: string }[] },
+): MediaArtifact | undefined {
+  if (plan.steps.length === 0) return undefined;
+  const lastStepId = plan.steps[plan.steps.length - 1].id;
+  const stepId = (artifact: MediaArtifact): string | undefined =>
+    typeof artifact.metadata?.stepId === "string" ? artifact.metadata.stepId : undefined;
+  const byLastStep = artifacts.find((artifact) => stepId(artifact) === lastStepId);
+  if (byLastStep) return byLastStep;
+  const video = artifacts.filter((artifact) => artifact.type === "video");
+  const burn = video.find((artifact) => artifact.capability === "ffmpeg-burn-subtitles");
+  if (burn) return burn;
+  const mux = video.find((artifact) => artifact.capability === "ffmpeg-mux");
+  if (mux) return mux;
+  return video[video.length - 1];
 }
 
 function versionInput(runId: string, artifacts: StepArtifact[]) {
@@ -330,11 +421,20 @@ export async function executeRun(runId: string): Promise<void> {
       recordEvent({ runId, versionNumber: iteration, type: "EVALUATION_STARTED", data: {} });
 
       const evaluations = [];
-      for (const artifact of version.artifacts) {
+      const finalArtifact = selectFinalArtifact(version.artifacts, currentPlan);
+      const judged: MediaArtifact[] = finalArtifact ? [finalArtifact] : version.artifacts;
+      for (const artifact of judged) {
+        const inspection = artifact.metadata?.mediaInspection as
+          | { container?: string; durationSec?: number; width?: number; height?: number; streams?: MediaInspection["streams"]; ok?: boolean; error?: string }
+          | undefined;
+        const verifiedMedia =
+          inspection && inspection.ok
+            ? `Verified by local media probe: container=${inspection.container ?? "unknown"}, duration=${inspection.durationSec ?? "unknown"}s, dimensions=${inspection.width ?? "?"}x${inspection.height ?? "?"}, streams=[${(inspection.streams ?? []).map((stream) => `${stream.kind}(${stream.codec ?? "?"}${stream.width ? ` ${stream.width}x${stream.height}` : ""})`).join(", ")}].`
+            : "No verified media probe evidence (the probe could not be run or returned no streams). Do not assume the artifact contains a specific stream type.";
         evaluations.push(await evaluateArtifact({
           brief: run.brief,
           artifact,
-          artifactDescription: `Step ${artifact.metadata.stepId ?? "unknown"} produced this real Livepeer artifact for the stated purpose: ${artifact.purpose}`,
+          artifactDescription: `Step ${artifact.metadata.stepId ?? "unknown"} produced this real Livepeer artifact for the stated purpose: ${artifact.purpose}. The artifact is stored as type "${artifact.type}".\n${verifiedMedia}`,
         }));
       }
       const evaluation = aggregateEvaluations(evaluations);
