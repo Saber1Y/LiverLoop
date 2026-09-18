@@ -13,14 +13,18 @@ Your responsibilities:
 6. Keep the plan minimal: only the steps that are truly needed.
 
 Rules:
-- Only use capabilities that appear in the provided list.
+- Only use capabilities that appear in the provided list AND in the validated capability contracts.
+- Only put params into a step that are declared in that capability's contract. Never invent params.
+- Media types are strict. "ffmpeg-audio-mix" outputs AUDIO only and consumes audio tracks only. "ffmpeg-mux" outputs VIDEO with audio and consumes exactly one video + one audio. "ffmpeg-burn-subtitles" consumes VIDEO and outputs VIDEO. Do not use a video-consuming tool on audio output, and never finish a video brief with an audio-only step.
+- When a brief needs both a video and audio (voiceover or music), assemble the final result with ffmpeg-mux, never with ffmpeg-audio-mix.
 - Prefer inexpensive, proven capabilities when they satisfy the step.
 - When ltx-25-i2v-fast is available, prefer it for a brief that needs a stable image-to-video render.
 - For a requested duration of 20 seconds, prefer ltx-25-t2v-fast or ltx-25-i2v-fast. Do not use ltx-25-t2v-pro for 20 seconds because its accepted durations are 6, 8, 10, and auto.
+- ltx video generation clips are limited to about 10 seconds each. When the brief duration is longer than 10 seconds, generate multiple clips and join them with an ffmpeg-concat step (inputRefs = all clip ids) BEFORE ffmpeg-mux adds the audio track. Never point ffmpeg-mux at more than one video input; it consumes exactly one video + one audio.
 - If the brief specifies a format/duration/CTA, reflect that in constraints.
 - Use "inputRefs" to declare dependencies between steps (paste the id of the step whose output this step consumes).
 - "knowledgeUsed" must list every lesson string you incorporated and say how it changed the plan.
-- Keep the plan concise: use no more than 4 steps.
+- Use exactly as many steps as the brief requires. A 20-30 second video with audio and an on-screen CTA typically needs 5-7 steps (two or three video clips, an audio source, ffmpeg-concat, ffmpeg-mux, and ffmpeg-burn-subtitles for the CTA). Do not cap the plan at 4 steps.
 - Keep each step's "params" to at most 3 short machine settings. Do not put long prompts in "params".
 - Do not repeat the brief or write long prose in any JSON field.
 - Reply ONLY with valid JSON matching the schema below.`;
@@ -84,8 +88,12 @@ Evaluate the generated artifact against the creative brief and return evidence, 
 Rules:
 - Evaluate only dimensions that make sense for the artifact type.
 - Use the artifact URL and any supplied artifact metadata as evidence.
+- Use the VERIFIED MEDIA EVIDENCE block. It states what streams the artifact actually contains (video, audio, image), its real duration, and real dimensions, measured independently by a local media probe. Treat it as ground truth for media type, duration, and dimensions.
+- If the verified evidence conflicts with the artifact's stored type (e.g. a "video" artifact with video stream only, or an "audio" artifact with no audio), report a high-severity issue.
+- If the brief asked for a specific duration or aspect ratio and the verified evidence differs, report a high-severity format/duration issue.
+- If there is no verified probe evidence, do not assume the artifact has any particular stream.
 - A missing requested CTA is a high-severity failure.
-- A format or duration mismatch is a high-severity failure.
+- Format or duration mismatch is a high-severity failure.
 - Explain every score in one concise sentence.
 - Use scores from 0 to 10. Do not inflate scores to pass weak work.
 - Set decision to "pass" only when overall >= passThreshold and no critical requested dimension is below 5.
@@ -118,7 +126,7 @@ ARTIFACT URL: ${params.artifactUrl}
 ARTIFACT METADATA:
 ${JSON.stringify(params.artifact, null, 2)}
 
-${params.artifactDescription ? `ARTIFACT DESCRIPTION:\n${params.artifactDescription}\n` : ""}
+${params.artifactDescription ? `VERIFIED MEDIA EVIDENCE + DESCRIPTION:\n${params.artifactDescription}\n` : "VERIFIED MEDIA EVIDENCE: none available"}
 
 Evaluate the artifact and return the structured result as JSON.`;
 }
@@ -126,6 +134,7 @@ Evaluate the artifact and return the structured result as JSON.`;
 export function buildPlannerUserPrompt(params: {
   brief: unknown;
   capabilitiesSummary: string;
+  capabilityContracts: string;
   knowledgeLessons: string[];
 }): string {
   const knowledgeSection =
@@ -140,6 +149,9 @@ ${JSON.stringify(params.brief, null, 2)}
 
 AVAILABLE LIVEPEER CAPABILITIES (choose only from these):
 ${params.capabilitiesSummary}
+
+VALIDATED CAPABILITY CONTRACTS (only use these capabilities and only their params):
+${params.capabilityContracts}
 
 ${knowledgeSection}
 
