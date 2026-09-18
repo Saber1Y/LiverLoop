@@ -2,7 +2,7 @@ import { EvaluationResult as EvaluationResultSchema } from "../domain/evaluation
 import type { EvaluationResult } from "../domain/evaluation";
 import type { MediaBrief } from "../domain/run";
 import type { MediaArtifact, MediaArtifactType } from "../domain/media";
-import { llmJson } from "../llm/client";
+import { llmJson, currentFastModel } from "../llm/client";
 import { LlmError } from "../llm/types";
 import {
   CRITIC_SCHEMA,
@@ -42,6 +42,7 @@ export async function evaluateArtifact(params: {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       const raw = await llmJson<EvaluationResult>({
+        model: attempt >= 1 ? currentFastModel() : undefined,
         system: `${CRITIC_SYSTEM_PROMPT}\n\n${CRITIC_SCHEMA}`,
         user: buildCriticUserPrompt({
           brief: params.brief,
