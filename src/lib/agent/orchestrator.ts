@@ -15,6 +15,7 @@ import { inspectArtifactUrl, expectedTypeForInspection, type MediaInspection } f
 import { getCapabilityContract } from "../livepeer/contracts";
 import { aggregateEvaluations, evaluateArtifact } from "./critic";
 import { createProductionPlan, directorDecide } from "./director";
+import { detectBakedTextAcrossPlan } from "./bakedtext";
 import { getPublishedKnowledgeAssets } from "../knowledge/repository";
 import { retrieveKnowledgeAsset } from "../dkg/retrieve";
 import { finalizeRunKnowledge } from "../knowledge/publisher";
@@ -72,7 +73,7 @@ function normalizeCapabilityInputs(
     if (!inputs.resolution) inputs.resolution = "720p";
     if (typeof inputs.prompt === "string") {
       const TEXT_SUPPRESSION =
-        "The frame must contain NO text, letters, numbers, words, captions, subtitles, logos, badges, labels, or banners anywhere - all on-screen text and the call-to-action are added in post-production.";
+        "The frame must contain NO text anywhere: no letters, words, captions, subtitles, numbers, logos, badges, labels, banners, watermarks, timestamps, timecodes, camera HUD readouts, UI chrome, or file-name overlays. ALL on-screen text and the call-to-action are added in post-production.";
       if (!inputs.prompt.includes("post-production")) {
         inputs.prompt = `${inputs.prompt.trim()} ${TEXT_SUPPRESSION}`;
       }
@@ -548,7 +549,31 @@ export async function executeRun(runId: string): Promise<void> {
         data: { evaluation },
       });
 
-      if (evaluation.decision === "pass" || iteration === MAX_ITERATIONS) {
+      // Inspect source generation clips for text baked into the footage,
+      // regardless of the critic's verdict. The critic samples only a handful
+      // of frames and can read a lucky frame as the intended CTA, so baked-in
+      // text can slip past a passing evaluation. Baked text is a SOURCE defect:
+      // ffmpeg-burn can only add an overlay, never remove text already rendered
+      // into the video, so a passing version with baked text must be downgraded
+      // to fail and routed to the director for regeneration. Checks only raw
+      // ltx source clips, so the intended burned CTA is never a false positive.
+      const bakedTextIssues = await detectBakedTextAcrossPlan({
+        runId,
+        iteration,
+        planSteps: currentPlan.steps,
+        artifacts: [...executed.artifacts].map((artifact) => ({
+          stepId: artifact.stepId,
+          capability: artifact.capability,
+          url: artifact.url,
+          durationSec: (artifact.metadata.mediaInspection as MediaInspection | undefined)?.durationSec,
+        })),
+      });
+      const hasBakedTextIssue = bakedTextIssues.length > 0;
+      const evaluationWithEvidence = hasBakedTextIssue
+        ? { ...evaluation, decision: "fail", issues: [...evaluation.issues, ...bakedTextIssues] }
+        : evaluation;
+
+      if (evaluationWithEvidence.decision === "pass" || iteration === MAX_ITERATIONS) {
         setSelectedVersion(runId, version.id);
         finalVersionId = version.id;
         recordEvent({ runId, versionNumber: iteration, type: "FINAL_VERSION_SELECTED", data: { versionId: version.id, evaluation } });
@@ -563,7 +588,7 @@ export async function executeRun(runId: string): Promise<void> {
           inputRefs: step.inputRefs,
           params: step.params,
         })),
-        evaluation,
+        evaluation: evaluationWithEvidence,
         versionNumber: iteration,
         capabilityCosts: capabilities,
         iterationCosts: Object.fromEntries(

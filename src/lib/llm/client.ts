@@ -99,6 +99,9 @@ export async function llmComplete(options: LlmCompleteOptions): Promise<LlmRespo
       if (!completion.choices || completion.choices.length === 0) {
         throw new LlmError("OpenRouter returned no choices. Retrying.", 502, true);
       }
+      if (!content.trim()) {
+        throw new LlmError("OpenRouter returned an empty response (free-tier model). Retrying.", 502, true);
+      }
       return {
         content: options.json ? stripCodeFences(content) : content,
         model: completion.model,
@@ -116,8 +119,10 @@ export async function llmComplete(options: LlmCompleteOptions): Promise<LlmRespo
         (/(timed out|ETIMEDOUT|timeout)/i.test(e.message ?? "") || e.code === "ETIMEDOUT");
       const retryable =
         status === 429 || status === 408 || status === 529 || status === 502 || status === 503 || timeoutError;
+      const emptyResponse = e instanceof LlmError && e.message.includes("empty response");
 
-      if (attempt >= maxAttempts - 1 || !retryable) {
+      const cap = emptyResponse ? 8 : maxAttempts;
+      if (attempt >= cap - 1 || !retryable) {
         throw new LlmError(
           `OpenRouter request failed: ${e.message ?? "unknown error"}`,
           status,
@@ -125,7 +130,7 @@ export async function llmComplete(options: LlmCompleteOptions): Promise<LlmRespo
         );
       }
 
-      const waitMs = 1000 * 2 ** attempt + Math.floor(Math.random() * 500);
+      const waitMs = (emptyResponse ? 2000 : 1000) * 2 ** attempt + Math.floor(Math.random() * 500);
       await new Promise((r) => setTimeout(r, waitMs));
       attempt += 1;
     }

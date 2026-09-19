@@ -30,6 +30,7 @@ const PREFERRED_CAPABILITIES: Record<string, string[]> = {
 
 const COMPOSITION_DIMENSIONS = new Set(["cta", "messaging"]);
 const COMPOSITION_ISSUE_KEYWORDS = /(\bcta\b|\blegib\w*|\btext\b|\bspelling\b|\btypo\b|\boverlay\b|\bsupers?\b)/i;
+const BAKED_TEXT_KEYWORDS = /(\bbaked[- ]?in\b|\brendered text\b|\bmodel[- ]?generated text\b|\bunwanted text\b|\bcompeting text\b|\bextra text\b|\bstray text\b|\btext in the footage\b|\btext.*(footage|frame|clip)\b)/i;
 
 function isSourceGenerationStep(stepId: string, steps: { id: string; capability: string }[]): boolean {
   const cap = steps.find((s) => s.id === stepId)?.capability;
@@ -290,11 +291,11 @@ export async function directorDecide(params: {
         }),
         temperature: 0.2,
       });
-      const decision = DirectorDecisionSchema.parse(raw);
+      let decision = DirectorDecisionSchema.parse(raw);
       const validStepIds = new Set(params.steps.map((s) => s.id));
       let redo = decision.stepsToRedo.filter((id) => validStepIds.has(id));
 
-      const evaluation = params.evaluation as { dimensions?: { name?: string; score?: number }[]; issues?: { description?: string }[] } | undefined;
+      const evaluation = params.evaluation as { dimensions?: { name?: string; score?: number }[]; issues?: { category?: string; description?: string }[] } | undefined;
       const failedDims = (evaluation?.dimensions ?? []).filter((d) => (d.score ?? 10) < 5);
       const compositionOnly =
         failedDims.length > 0 &&
@@ -302,8 +303,36 @@ export async function directorDecide(params: {
       const hasTextIssue = (evaluation?.issues ?? []).some((issue) =>
         COMPOSITION_ISSUE_KEYWORDS.test(issue.description ?? ""),
       );
+      const hasBakedTextIssue = (evaluation?.issues ?? []).some((issue) =>
+        issue.category === "baked-text" ||
+        BAKED_TEXT_KEYWORDS.test(issue.description ?? ""),
+      );
 
-      if (compositionOnly && hasTextIssue) {
+      // Baked-in text is a SOURCE defect: the footage itself contains rendered
+      // text that ffmpeg-burn cannot remove. Regenerating the source generation
+      // step (with stronger no-text suppression) is the only corrective path, so
+      // source steps must stay in redo. Only strip source steps for overlay-style
+      // composition defects (small/misplaced CTA) that an assembly step can fix.
+      if (hasBakedTextIssue) {
+        // The critic demonstrably misses baked-in text (it samples a handful of
+        // frames and can read an unlucky frame as the intended CTA), so a "pass"
+        // on a baked-text-carrying version is never acceptable: force the action
+        // to a retry and guarantee every source step named in a baked-text issue
+        // is regenerated. Baked-text issues are emitted by detectBakedTextAcrossPlan
+        // with the verbatim source step id quoted in the description.
+        const bakedStepIds = new Set(
+          (evaluation?.issues ?? [])
+            .filter((issue) => issue.category === "baked-text" || BAKED_TEXT_KEYWORDS.test(issue.description ?? ""))
+            .flatMap((issue) => [...(issue.description ?? "").matchAll(/"([^"]+)"/g)])
+            .map((match) => match[1])
+            .filter((stepId) => params.steps.some((step) => step.id === stepId && isSourceGenerationStep(step.id, params.steps))),
+        );
+        if (bakedStepIds.size > 0) {
+          const action = decision.action === "abandon" ? decision.action : "targeted_retry";
+          redo = [...new Set([...redo, ...bakedStepIds])];
+          decision = { ...decision, action };
+        }
+      } else if (compositionOnly && hasTextIssue) {
         const surgicalRedo = redo.filter((id) => !isSourceGenerationStep(id, params.steps));
         if (surgicalRedo.length > 0) {
           redo = surgicalRedo;
