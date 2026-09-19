@@ -148,8 +148,9 @@ const CONTRACTS: Record<string, CapabilityContract> = {
     outputType: "video",
     consumes: ["video"],
     params: {
-      start: { type: "number" },
-      duration: { type: "number" },
+      start_sec: { type: "number", note: "offset in seconds to begin the clip; accepts start as an alias" },
+      duration_sec: { type: "number", note: "length in seconds; exactly one of duration_sec or end_sec is required; accepts duration as an alias" },
+      end_sec: { type: "number", note: "absolute end offset; use either duration_sec or end_sec, not both" },
     },
   },
 };

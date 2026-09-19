@@ -19,7 +19,7 @@ import {
   buildKnowledgeLessonPrompt,
 } from "./prompts";
 
-const MAX_PLAN_ATTEMPTS = 3;
+const MAX_PLAN_ATTEMPTS = 4;
 const MAX_DECISION_ATTEMPTS = 3;
 const PREFERRED_CAPABILITIES: Record<string, string[]> = {
   image: ["flux-schnell", "ideogram-v4", "flux-dev"],
@@ -161,9 +161,18 @@ export function validatePlanAgainstContracts(
       const value = step.params[key];
       if (!spec.allowed.includes(value as string | number)) {
         const accepted = spec.allowed.map((v) => JSON.stringify(v)).join(", ");
+        const hint = (() => {
+          if (key !== "duration") return "";
+          const target = typeof plan.constraints.duration === "number" ? plan.constraints.duration : undefined;
+          if (typeof target !== "number") return "";
+          const valid = spec.allowed.filter((v) => typeof v === "number") as number[];
+          if (valid.length === 0) return "";
+          let total = 0;
+          while (total < target) total += valid[valid.length - 1];
+          return ` For a ${target}-second brief, keep every clip duration in {${accepted}}, then add a FINAL ffmpeg-trim step (params {"start_sec":0,"duration_sec":${target}}) to hit the exact length.`;
+        })();
         errors.push(
-          `Step "${step.id}" (${step.capability}) param "${key}" = ${JSON.stringify(value)} is not accepted; accepted values are: ${accepted}. ` +
-            `Adjust the plan so every clip uses an accepted duration, or add an ffmpeg-trim step to reach the exact brief duration.`,
+          `Step "${step.id}" (${step.capability}) param "${key}" = ${JSON.stringify(value)} is not accepted; accepted values are: ${accepted}.${hint}`,
         );
       }
     }

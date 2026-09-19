@@ -88,6 +88,16 @@ function normalizeCapabilityInputs(
     ]);
     if (!allowed.has(inputs.camera_motion)) inputs.camera_motion = "dolly_in";
   }
+  if (step.capability === "ffmpeg-trim") {
+    if (inputs.start_sec === undefined && inputs.start !== undefined) {
+      inputs.start_sec = inputs.start;
+    }
+    delete inputs.start;
+    if (inputs.duration_sec === undefined && inputs.duration !== undefined) {
+      inputs.duration_sec = inputs.duration;
+    }
+    delete inputs.duration;
+  }
   if (step.capability === "ffmpeg-burn-subtitles") {
     if (inputs.position === "bottom-center" || inputs.position === "bottom_center") inputs.position = "bottom";
     if (inputs.position === "top-center" || inputs.position === "top_center") inputs.position = "top";

@@ -16,14 +16,6 @@ interface McpSession {
   id: string | null;
 }
 
-function authHeaders(): Record<string, string> {
-  const key = process.env.LIVEPEER_API_KEY;
-  if (key && key.length > 8 && !key.includes("REPLACE")) {
-    return { Authorization: `Bearer ${key}` };
-  }
-  return {};
-}
-
 async function jsonRpc(
   method: string,
   params: Record<string, unknown>,
@@ -32,7 +24,6 @@ async function jsonRpc(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Accept: "application/json, text/event-stream",
-    ...authHeaders(),
   };
   if (session.id) headers["Mcp-Session-Id"] = session.id;
 
@@ -118,7 +109,6 @@ export async function fetchLivepeerCapabilities(
 ): Promise<LivepeerCapabilitiesResponse> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...authHeaders(),
   };
   try {
     const res = await fetch(`${AGENT_BASE_URL}${CAPABILITIES_PATH}?limit=${limit}`, {
