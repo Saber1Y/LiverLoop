@@ -129,8 +129,8 @@ const CONTRACTS: Record<string, CapabilityContract> = {
     params: {
       srt_url: { type: "string" },
       cues: { type: "array", note: "[{text, start_sec, end_sec}]" },
-      position: { type: "string", note: "bottom|top (normalized)" },
-      font_size: { type: "number" },
+      position: { type: "string", note: "bottom|top (normalized); defaults to bottom" },
+      font_size: { type: "number", note: "pixels; ~120 reads large (~30% of frame height), 60-72 reads small" },
     },
   },
   "ffmpeg-concat": {
@@ -149,7 +149,7 @@ const CONTRACTS: Record<string, CapabilityContract> = {
     consumes: ["video"],
     params: {
       start_sec: { type: "number", note: "offset in seconds to begin the clip; accepts start as an alias" },
-      duration_sec: { type: "number", note: "length in seconds; exactly one of duration_sec or end_sec is required; accepts duration as an alias" },
+      duration_sec: { type: "number", note: "length in seconds; exactly one of duration_sec or end_sec is required; accepts duration as an alias. Use the EXACT brief duration when trim is the FINAL step (nothing re-encodes after it); use slightly less if a burn/mux re-encode will follow, since that can add ~1ms over the limit." },
       end_sec: { type: "number", note: "absolute end offset; use either duration_sec or end_sec, not both" },
     },
   },

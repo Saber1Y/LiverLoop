@@ -44,6 +44,13 @@ function pickTimestamps(durationSec: number): number[] {
     const unique = new Set<number>([start, middle, styleFrame, ctaFrame].map((t) => Math.round(t)));
     return [...unique].sort((a, b) => a - b).slice(0, MAX_FRAMES);
   }
+  if (durationSec > 10) {
+    const start = Math.min(1, durationSec * 0.1);
+    const styleFrame = Math.max(0, durationSec - 4);
+    const ctaFrame = Math.max(0, durationSec - 1.2);
+    const unique = new Set<number>([start, styleFrame, Math.min(durationSec - 0.2, ctaFrame)].map((t) => Math.round(t * 10) / 10));
+    return [...unique].sort((a, b) => a - b).slice(0, MAX_FRAMES);
+  }
   const start = Math.min(0.5, durationSec * 0.1);
   const ctaFrame = Math.max(0, durationSec - 1.2);
   return [start, ctaFrame].map((t) => Math.round(t * 10) / 10);

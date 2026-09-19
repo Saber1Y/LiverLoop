@@ -107,6 +107,33 @@ export function validatePlanAgainstContracts(
     if (output) stepOutputTypes.set(step.id, output);
   }
 
+  const targetDuration = typeof plan.constraints.duration === "number" ? plan.constraints.duration : undefined;
+  if (targetDuration && targetDuration > 0) {
+    const videoGenerators = plan.steps.filter((step) =>
+      /^ltx-25-(i2v|t2v)-(fast|pro)$/.test(step.capability),
+    );
+    if (videoGenerators.length > 0) {
+      let nominalTotal = 0;
+      for (const step of videoGenerators) {
+        const value = step.params.duration;
+        if (value === "auto") nominalTotal += 10.3;
+        else if (typeof value === "number") nominalTotal += value;
+      }
+      if (nominalTotal < targetDuration) {
+        const combo = (() => {
+          if (targetDuration <= 10) return `${Math.ceil(targetDuration / 10) * 10}`;
+          if (targetDuration <= 16) return "8 + 8";
+          if (targetDuration <= 20) return "10 + 10";
+          const count = Math.ceil(targetDuration / 10);
+          return Array(count).fill("10").join(" + ");
+        })();
+        errors.push(
+          `Plan under-produces video: generated clip durations sum to ${nominalTotal}s but the brief needs ${targetDuration}s. Clips can only be SHORTENED (ffmpeg-trim cuts, never extends), so the nominal sum must be >= the brief. Use a combination from {6, 8, 10, auto} summing to at least ${targetDuration}s (for a ${targetDuration}s brief, ${combo} works), then finish with ffmpeg-trim params {"start_sec":0,"duration_sec":${targetDuration}} as the FINAL step to land exactly on target.`,
+        );
+      }
+    }
+  }
+
   for (const step of plan.steps) {
     if (!available.has(step.capability)) {
       errors.push(`Step "${step.id}" uses capability "${step.capability}" which is not available on Livepeer.`);
@@ -169,7 +196,7 @@ export function validatePlanAgainstContracts(
           if (valid.length === 0) return "";
           let total = 0;
           while (total < target) total += valid[valid.length - 1];
-          return ` For a ${target}-second brief, keep every clip duration in {${accepted}}, then add a FINAL ffmpeg-trim step (params {"start_sec":0,"duration_sec":${target}}) to hit the exact length.`;
+          return ` For a ${target}-second brief, keep every clip duration in {${accepted}}, choose the combination whose nominal sum is >= ${target}s (clips can only be shortened), then make ffmpeg-trim the FINAL step with params {"start_sec":0,"duration_sec":${target}} to land exactly on target.`;
         })();
         errors.push(
           `Step "${step.id}" (${step.capability}) param "${key}" = ${JSON.stringify(value)} is not accepted; accepted values are: ${accepted}.${hint}`,
@@ -177,6 +204,19 @@ export function validatePlanAgainstContracts(
       }
     }
   }
+
+  const lastTrimIndex = plan.steps.map((s) => s.capability).lastIndexOf("ffmpeg-trim");
+  if (lastTrimIndex >= 0 && lastTrimIndex < plan.steps.length - 1) {
+    const encodeAfter = plan.steps.slice(lastTrimIndex + 1).find((s) =>
+      ["ffmpeg-mux", "ffmpeg-burn-subtitles", "ffmpeg-concat", "ffmpeg-kenburns"].includes(s.capability),
+    );
+    if (encodeAfter) {
+      errors.push(
+        `Step "${encodeAfter.id}" (${encodeAfter.capability}) comes AFTER the ffmpeg-trim step "${plan.steps[lastTrimIndex].id}". A re-encode after the final trim can add ~1ms and push the output over an exact-duration limit. Move the ffmpeg-trim step so it is the FINAL encoding step in the plan.`,
+      );
+    }
+  }
+
   return { ok: errors.length === 0, errors };
 }
 

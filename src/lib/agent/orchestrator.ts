@@ -68,8 +68,15 @@ function normalizeCapabilityInputs(
   } else {
     Object.assign(inputs, step.params);
   }
-  if (/^ltx-25-(i2v|t2v)-fast$/.test(step.capability) && !inputs.resolution) {
-    inputs.resolution = "720p";
+  if (/^ltx-25-(i2v|t2v)-(fast|pro)$/.test(step.capability)) {
+    if (!inputs.resolution) inputs.resolution = "720p";
+    if (typeof inputs.prompt === "string") {
+      const TEXT_SUPPRESSION =
+        "The frame must contain NO text, letters, numbers, words, captions, subtitles, logos, badges, labels, or banners anywhere - all on-screen text and the call-to-action are added in post-production.";
+      if (!inputs.prompt.includes("post-production")) {
+        inputs.prompt = `${inputs.prompt.trim()} ${TEXT_SUPPRESSION}`;
+      }
+    }
   }
   if (/tts|-tts$|chatterbox/i.test(step.capability) && typeof inputs.text === "string" && !inputs.prompt) {
     inputs.prompt = inputs.text;
@@ -125,8 +132,10 @@ function normalizeCapabilityInputs(
         ? constraints.cta.trim()
         : "Learn more";
       const duration = typeof constraints.duration === "number" ? constraints.duration : 20;
-      inputs.cues = [{ text, start_sec: Math.max(0, duration - 3), end_sec: duration }];
+      inputs.cues = [{ text, start_sec: Math.max(0, duration - 4), end_sec: Math.max(0.5, duration - 0.1) }];
     }
+    if (inputs.font_size === undefined) inputs.font_size = 120;
+    if (!inputs.position) inputs.position = "bottom";
     delete inputs.inline_cues;
     delete inputs.cue;
     delete inputs.start;
@@ -476,6 +485,21 @@ export async function executeRun(runId: string): Promise<void> {
             stepsToRun = [...stepsToRun, ...inserted];
             recordEvent({ runId, versionNumber: iteration, type: "STEPS_INSERTED", data: { inserted } });
           }
+        }
+
+        // Cascade: any step consuming the output of a step being re-run must also
+        // re-run, otherwise the final artifact is assembled from stale upstream output.
+        for (let pass = 0; pass < currentPlan.steps.length; pass += 1) {
+          const reRunIds = new Set(stepsToRun.map((step) => step.id));
+          let added = false;
+          for (const step of currentPlan.steps) {
+            if (reRunIds.has(step.id)) continue;
+            if (step.inputRefs.some((ref) => reRunIds.has(ref))) {
+              stepsToRun = [...stepsToRun, step];
+              added = true;
+            }
+          }
+          if (!added) break;
         }
       }
 
