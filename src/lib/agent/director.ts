@@ -19,7 +19,7 @@ import {
   buildKnowledgeLessonPrompt,
 } from "./prompts";
 
-const MAX_PLAN_ATTEMPTS = 4;
+const MAX_PLAN_ATTEMPTS = 2;
 const MAX_DECISION_ATTEMPTS = 3;
 const PREFERRED_CAPABILITIES: Record<string, string[]> = {
   image: ["flux-schnell", "ideogram-v4", "flux-dev"],
@@ -81,12 +81,24 @@ function capabilityCostMap(
   return map;
 }
 
-function dedupeLessons(lessons: string[]): string[] {
+export function lessonConflictsWithBrief(lesson: string, brief: MediaBrief): boolean {
+  const lower = lesson.toLowerCase();
+  const quoted = [...lesson.matchAll(/'([^']+)'|"([^"]+)"/g)].map((m) => m[1] ?? m[2]);
+  if (brief.cta && quoted.some((q) => q.toLowerCase() !== brief.cta!.toLowerCase())) return true;
+  if (brief.duration != null) {
+    const durationMatch = lower.match(/(\d+)\s*(?:seconds?|\bsec\b|\bs\b)\b/);
+    if (durationMatch && Number(durationMatch[1]) !== brief.duration) return true;
+  }
+  return false;
+}
+
+function dedupeLessons(lessons: string[], brief?: MediaBrief): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
   for (const lesson of lessons) {
     const normalized = lesson.toLowerCase().replace(/\s+/g, " ").trim();
     if (!normalized || seen.has(normalized)) continue;
+    if (brief && lessonConflictsWithBrief(lesson, brief)) continue;
     if (result.some((existing) => existing.toLowerCase().replace(/\s+/g, " ").includes(normalized.slice(0, 40)))) continue;
     seen.add(normalized);
     result.push(lesson);
@@ -226,7 +238,7 @@ export async function createProductionPlan(params: {
   capabilities: LivepeerCapability[];
   knowledge: MediaRunKnowledgeAsset[];
 }): Promise<{ plan: ProductionPlan; knowledgeUsed: string[] }> {
-  const lessons = dedupeLessons(params.knowledge.flatMap((a) => a.lessons));
+  const lessons = dedupeLessons(params.knowledge.flatMap((a) => a.lessons), params.brief);
   let userPrompt = buildPlannerUserPrompt({
     brief: params.brief,
     capabilitiesSummary: summarizeCapabilities(params.capabilities),
