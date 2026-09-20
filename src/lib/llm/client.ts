@@ -121,7 +121,7 @@ export async function llmComplete(options: LlmCompleteOptions): Promise<LlmRespo
         status === 429 || status === 408 || status === 529 || status === 502 || status === 503 || timeoutError;
       const emptyResponse = e instanceof LlmError && e.message.includes("empty response");
 
-      const cap = emptyResponse ? 4 : maxAttempts;
+      const cap = emptyResponse ? 2 : maxAttempts;
       if (attempt >= cap - 1 || !retryable) {
         throw new LlmError(
           `OpenRouter request failed: ${e.message ?? "unknown error"}`,

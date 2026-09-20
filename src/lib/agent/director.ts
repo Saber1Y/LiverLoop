@@ -259,7 +259,7 @@ export async function createProductionPlan(params: {
         system: `${DIRECTOR_SYSTEM_PROMPT}\n\n${schemaHint}`,
         user: userPrompt,
         temperature: 0.3,
-        maxTokens: 3400,
+        maxTokens: 2200,
       });
       const plan = ProductionPlanSchema.parse(raw);
       const contractCheck = validatePlanAgainstContracts(plan, params.capabilities);
