@@ -15,6 +15,7 @@ import {
   Send,
   Video,
   Play,
+  Download,
   CheckCircle2,
   CircleAlert,
   LoaderCircle
@@ -426,6 +427,16 @@ function VideoArtifact({ url, fallbackUrl }: { url: string; fallbackUrl?: string
       <div className="pointer-events-none absolute left-4 top-4 rounded-full border border-white/15 bg-black/50 px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.16em] text-white/70 backdrop-blur">
         {usingFallback ? "Source video preview / final compose unavailable" : "Final artifact / Livepeer"}
       </div>
+      <a
+        href={source}
+        download
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Download final video"
+        className="absolute bottom-4 right-4 flex size-10 items-center justify-center rounded-full border border-white/15 bg-black/50 text-white/80 backdrop-blur transition hover:bg-primary hover:text-primary-foreground hover:shadow-[0_0_25px_rgba(200,245,106,0.3)]"
+      >
+        <Download className="size-4" />
+      </a>
     </div>
   );
 }
