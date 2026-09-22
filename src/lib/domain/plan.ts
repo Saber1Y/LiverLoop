@@ -37,4 +37,4 @@ export const DirectorDecision = z.object({
 });
 export type DirectorDecision = z.infer<typeof DirectorDecision>;
 
-export const MAX_ITERATIONS = 3;
+export const MAX_ITERATIONS = 5;

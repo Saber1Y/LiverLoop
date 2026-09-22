@@ -173,6 +173,34 @@ export async function runLivepeerCapability(
   throw lastError ?? new Error(LIVE_PEER_ERRORS.UNKNOWN);
 }
 
+export async function uploadLivepeerAsset(
+  data: Buffer,
+  mimeType: string,
+  filename: string,
+): Promise<string> {
+  const session = await initializeMcp();
+  const result = (await jsonRpc(
+    "tools/call",
+    {
+      name: "upload",
+      arguments: {
+        data: data.toString("base64"),
+        mime_type: mimeType,
+        filename,
+      },
+    },
+    session,
+  )) as LivepeerRunResponse;
+  const content = result?.structuredContent as
+    | { url?: string; error?: string }
+    | undefined;
+  const url = content?.url;
+  if (content?.error || !url) {
+    throw new Error(content?.error ?? "Livepeer upload returned no asset URL");
+  }
+  return url;
+}
+
 export async function checkLivepeerJob(jobId: string): Promise<{
   status: string;
   url?: string;

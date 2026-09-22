@@ -10,6 +10,8 @@ import {
 } from "../ledger/versions";
 import { getCapabilities, classifyCapability } from "../livepeer/capabilities";
 import { runMediaJob } from "../livepeer/jobs";
+import { uploadLivepeerAsset } from "../livepeer/client";
+import { renderCtaOverlayPng } from "../media/ctaOverlay";
 import type { LivepeerCapability } from "../livepeer/types";
 import { inspectArtifactUrl, expectedTypeForInspection, type MediaInspection } from "../media/inspect";
 import { getCapabilityContract } from "../livepeer/contracts";
@@ -99,6 +101,9 @@ function normalizeCapabilityInputs(
   if (step.capability === "ffmpeg-trim") {
     if (inputs.start_sec === undefined && inputs.start !== undefined) {
       inputs.start_sec = inputs.start;
+    }
+    if (inputs.start_sec === undefined) {
+      inputs.start_sec = 0;
     }
     delete inputs.start;
     if (inputs.duration_sec === undefined && inputs.duration !== undefined) {
@@ -237,6 +242,51 @@ async function executeSteps(params: {
       capability = fallback;
     }
 
+    // A sub-title burn placed at the TOP is rewritten to an ffmpeg-overlay so the
+    // CTA renders as large white text with a dark outline anchored to the top of
+    // the frame. ffmpeg-burn-subtitles centers a "top"-positioned cue around the
+    // vertical middle of the frame and cannot supply an outline, while
+    // ffmpeg-overlay takes x/y placement + start/end timing and preserves audio.
+    let overlayInputsOverride: Record<string, unknown> | undefined;
+    if (executionStep.capability === "ffmpeg-burn-subtitles" && (sourceArtifact?.type === "video" || sourceArtifact?.type === undefined)) {
+      const burnNormalized = normalizeCapabilityInputs(executionStep, params.plan.constraints);
+      if (burnNormalized.position === "top") {
+        const overlayCap = params.capabilities.find((item) => item.name === "ffmpeg-overlay");
+        if (!overlayCap) {
+          throw new Error("A TOP-positioned CTA requires ffmpeg-overlay, which is not available on the network.");
+        }
+        if (!sourceArtifact?.url) {
+          throw new Error("ffmpeg-overlay requires a video artifact to composite the CTA onto.");
+        }
+        const cues = Array.isArray(burnNormalized.cues) ? burnNormalized.cues : [];
+        const cue = cues[0] && typeof cues[0] === "object" ? (cues[0] as Record<string, unknown>) : undefined;
+        const ctaText =
+          (typeof cue?.text === "string" && cue.text.trim()) ||
+          (typeof params.plan.constraints.cta === "string" && params.plan.constraints.cta.trim()) ||
+          "Learn more";
+        const duration = typeof params.plan.constraints.duration === "number" ? params.plan.constraints.duration : 20;
+        const startSec = typeof cue?.start_sec === "number" ? cue.start_sec : Math.max(0, duration - 4);
+        const endSec = typeof cue?.end_sec === "number" ? cue.end_sec : Math.max(0.5, duration - 0.1);
+        const png = renderCtaOverlayPng(ctaText, { fontSize: 180, borderWidth: 12 });
+        const overlayUrl = await uploadLivepeerAsset(png, "image/png", `cta-${step.id}.png`);
+        const sourceUrl = sourceArtifact.url;
+        executionStep = { ...step, capability: "ffmpeg-overlay", params: {} };
+        capability = overlayCap;
+        overlayInputsOverride = {
+          video_url: sourceUrl,
+          base_url: sourceUrl,
+          source_url: sourceUrl,
+          overlay_url: overlayUrl,
+          image_url: overlayUrl,
+          x: 0.5,
+          y: 0.055,
+          scale: 0.42,
+          start_sec: startSec,
+          end_sec: endSec,
+        };
+      }
+    }
+
     if (executionStep.capability === "ffmpeg-mux") {
       const hasVideo = inputArtifacts.some((artifact) => artifact.type === "video");
       const hasAudio = inputArtifacts.some((artifact) => artifact.type === "audio");
@@ -279,8 +329,8 @@ async function executeSteps(params: {
       capability: executionStep.capability,
       prompt: buildStepPrompt(executionStep, params.plan.constraints),
       sourceUrl: sourceArtifact?.url,
-      inputs: multiInputInputs(executionStep, inputArtifacts, params.plan.constraints),
-      async: mediaType === "video" || mediaType === "audio",
+      inputs: overlayInputsOverride ?? multiInputInputs(executionStep, inputArtifacts, params.plan.constraints),
+      async: mediaType === "video" || mediaType === "audio" || Boolean(overlayInputsOverride),
       timeout: 900,
       maxWaitMs: 10 * 60 * 1000,
     });
@@ -392,7 +442,9 @@ function selectFinalArtifact(
   const byLastStep = artifacts.find((artifact) => stepId(artifact) === lastStepId);
   if (byLastStep) return byLastStep;
   const video = artifacts.filter((artifact) => artifact.type === "video");
-  const burn = video.find((artifact) => artifact.capability === "ffmpeg-burn-subtitles");
+  const burn = video.find(
+    (artifact) => artifact.capability === "ffmpeg-burn-subtitles" || artifact.capability === "ffmpeg-overlay",
+  );
   if (burn) return burn;
   const mux = video.find((artifact) => artifact.capability === "ffmpeg-mux");
   if (mux) return mux;

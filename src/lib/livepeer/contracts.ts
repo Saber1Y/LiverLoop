@@ -129,8 +129,8 @@ const CONTRACTS: Record<string, CapabilityContract> = {
     params: {
       srt_url: { type: "string" },
       cues: { type: "array", note: "[{text, start_sec, end_sec}]" },
-      position: { type: "string", note: "bottom|top (normalized); defaults to bottom" },
-      font_size: { type: "number", note: "pixels; ~120 reads large (~30% of frame height), 60-72 reads small" },
+      position: { type: "string", note: "bottom|top (normalized); a position of \"top\" renders as an assembly-layer overlay with a dark outline anchored to the top edge" },
+      font_size: { type: "number", note: "pixels; 80-100 reads clearly and quite large without clipping, keep below ~120" },
     },
   },
   "ffmpeg-concat": {
