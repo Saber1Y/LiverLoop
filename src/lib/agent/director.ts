@@ -19,7 +19,7 @@ import {
   buildKnowledgeLessonPrompt,
 } from "./prompts";
 
-const MAX_PLAN_ATTEMPTS = 2;
+const MAX_PLAN_ATTEMPTS = 3;
 const MAX_DECISION_ATTEMPTS = 3;
 const PREFERRED_CAPABILITIES: Record<string, string[]> = {
   image: ["flux-schnell", "ideogram-v4", "flux-dev"],
@@ -196,6 +196,20 @@ export function validatePlanAgainstContracts(
     if (unknownParams.length > 0) {
       errors.push(`Step "${step.id}" (${step.capability}) used params not in its contract: ${unknownParams.join(", ")}.`);
     }
+    if (step.capability === "ffmpeg-trim") {
+      const hasStart = step.params.start_sec !== undefined || step.params.start !== undefined;
+      const hasDuration = step.params.duration_sec !== undefined || step.params.duration !== undefined;
+      const hasEnd = step.params.end_sec !== undefined;
+      if (!hasStart) {
+        errors.push(`Step "${step.id}" (${step.capability}) is missing required param "start_sec" (the tool rejects the request without it). Use {"start_sec":0,"duration_sec":${typeof plan.constraints.duration === "number" && plan.constraints.duration > 0 ? plan.constraints.duration : ".."}} as the final trim.`);
+      }
+      if (!hasDuration && !hasEnd) {
+        errors.push(`Step "${step.id}" (${step.capability}) must set exactly one of "duration_sec" or "end_sec".`);
+      }
+      if (hasDuration && hasEnd) {
+        errors.push(`Step "${step.id}" (${step.capability}) set both "duration_sec" and "end_sec"; use exactly one.`);
+      }
+    }
     for (const [key, spec] of Object.entries(contract.params)) {
       if (!spec.allowed || !(key in step.params)) continue;
       const value = step.params[key];
@@ -225,7 +239,7 @@ export function validatePlanAgainstContracts(
     );
     if (encodeAfter) {
       errors.push(
-        `Step "${encodeAfter.id}" (${encodeAfter.capability}) comes AFTER the ffmpeg-trim step "${plan.steps[lastTrimIndex].id}". A re-encode after the final trim can add ~1ms and push the output over an exact-duration limit. Move the ffmpeg-trim step so it is the FINAL encoding step in the plan.`,
+        `Step "${encodeAfter.id}" (${encodeAfter.capability}) comes AFTER the ffmpeg-trim step "${plan.steps[lastTrimIndex].id}". A re-encode after the final trim can add ~1ms and push the output over an exact-duration limit. Use the canonical order: clip generation step(s) -> (ffmpeg-concat if multiple clips) -> audio step -> ffmpeg-mux -> ffmpeg-burn-subtitles -> ffmpeg-trim LAST. Every mux/burn/concat step must be BEFORE the trim, so the trim is the absolute final encoding step.`,
       );
     }
   }
