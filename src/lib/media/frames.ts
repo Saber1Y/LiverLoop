@@ -34,7 +34,8 @@ async function downloadToTemp(url: string): Promise<{ dir: string; path: string 
   return { dir, path };
 }
 
-function pickTimestamps(durationSec: number): number[] {
+function pickTimestamps(durationSec: number, maxFrames: number): number[] {
+  const cap = Math.max(1, Math.min(MAX_FRAMES, maxFrames));
   if (durationSec <= 0) return [1];
   if (durationSec > 15) {
     const start = Math.min(1, durationSec * 0.15);
@@ -42,14 +43,16 @@ function pickTimestamps(durationSec: number): number[] {
     const ctaFrame = Math.max(0, durationSec - 1.5);
     const styleFrame = Math.max(0, durationSec - 4);
     const unique = new Set<number>([start, middle, styleFrame, ctaFrame].map((t) => Math.round(t)));
-    return [...unique].sort((a, b) => a - b).slice(0, MAX_FRAMES);
+    return [...unique].sort((a, b) => a - b).slice(0, cap);
   }
   if (durationSec > 10) {
     const start = Math.min(1, durationSec * 0.1);
     const styleFrame = Math.max(0, durationSec - 4);
     const ctaFrame = Math.max(0, durationSec - 1.2);
-    const unique = new Set<number>([start, styleFrame, Math.min(durationSec - 0.2, ctaFrame)].map((t) => Math.round(t * 10) / 10));
-    return [...unique].sort((a, b) => a - b).slice(0, MAX_FRAMES);
+    const all = [...new Set([start, styleFrame, Math.min(durationSec - 0.2, ctaFrame)].map((t) => Math.round(t * 10) / 10))].sort((a, b) => a - b);
+    // For reduced-frame audits, prefer the latest frames (style + CTA window).
+    if (cap < all.length) return all.slice(all.length - cap, all.length);
+    return all;
   }
   const start = Math.min(0.5, durationSec * 0.1);
   const ctaFrame = Math.max(0, durationSec - 1.2);
@@ -68,7 +71,7 @@ async function extractFrame(
       "-ss", String(timestampSec),
       "-i", inputPath,
       "-frames:v", "1",
-      "-vf", "scale=960:-2",
+      "-vf", "scale=384:-2",
       "-q:v", "2",
       "-y",
       outPath,
@@ -84,10 +87,11 @@ async function extractFrame(
 export async function sampleVideoFrames(
   url: string,
   durationSec: number,
+  maxFrames?: number,
 ): Promise<VisualFrameSample[]> {
   const { dir, path } = await downloadToTemp(url);
   try {
-    const timestamps = pickTimestamps(durationSec);
+    const timestamps = pickTimestamps(durationSec, maxFrames ?? MAX_FRAMES);
     const frames: VisualFrameSample[] = [];
     for (const timestampSec of timestamps) {
       try {
@@ -128,9 +132,10 @@ export async function artifactToImageParts(params: {
   url: string;
   type: MediaArtifactType;
   durationSec?: number;
+  maxFrames?: number;
 }): Promise<{ images: LlmImagePart[]; labels: string[] }> {
   if (params.type === "video") {
-    const frames = await sampleVideoFrames(params.url, params.durationSec ?? 10);
+    const frames = await sampleVideoFrames(params.url, params.durationSec ?? 10, params.maxFrames);
     return {
       images: frames.map((frame) => ({ dataUrl: frame.dataUrl, label: `frame at ${frame.timestampSec}s` })),
       labels: frames.map((frame) => `${frame.timestampSec}s`),

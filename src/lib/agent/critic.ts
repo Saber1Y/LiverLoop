@@ -47,6 +47,7 @@ async function buildVisualEvidence(artifact: MediaArtifact): Promise<{
       url: artifact.url,
       type: artifact.type,
       durationSec,
+      maxFrames: 2,
     });
     return { images, frameTimes: labels };
   } catch (error) {
