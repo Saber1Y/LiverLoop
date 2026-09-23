@@ -2,6 +2,18 @@
 
 Liverloop is an autonomous multimodal media production loop that uses Livepeer to create media, evaluates and selectively improves its work, and preserves durable lessons through OriginTrail DKG.
 
+## Hackathon Track
+
+**Track 2: Livepeer Agent + OriginTrail DKG**
+
+The chosen track combines the Livepeer Agent capability network with the OriginTrail Decentralized Knowledge Graph.
+
+Liverloop is the loop that connects the two.
+
+Livepeer generates the media.
+
+OriginTrail preserves the prompt history and evaluation lessons from every production run.
+
 ## Product Loop
 
 ```text
@@ -35,8 +47,14 @@ Director -> Livepeer Agent -> Media artifacts
     |
 Critic -> structured evaluation -> targeted retry
     |
-Knowledge extraction -> dkg.js V8 -> OriginTrail testnet UAL
+Knowledge extraction -> DKG V10 API -> DKG V10 Base Testnet UAL
 ```
+
+Liverloop runs a local OriginTrail DKG V10 node and publishes through the node's HTTP API.
+
+The node owns the publishing wallet and submits the transaction to Base Sepolia.
+
+The published UAL resolves on-chain through the local node and is verified in-app against the DKG Hub.
 
 ## Livepeer
 
@@ -54,13 +72,17 @@ Every completed capability call records the returned artifact URL and `cost_usd_
 
 The API key is read server-side from `LIVEPEER_API_KEY` when configured.
 
-## OriginTrail
+## OriginTrail DKG
 
-The project uses `dkg.js` version 8 against an OriginTrail testnet node.
+The project uses the OriginTrail DKG **V10** API against a local DKG V10 Base Testnet node.
+
+The local node is configured for the `testnet` network, which resolves to the DKG V10 Base Testnet deployed on Base Sepolia (`base:84532`).
+
+The node owns its own wallet and does not require an application-level private key.
+
+Application configuration only points at the node endpoint, port, context graph, and blockchain.
 
 The published public asset contains the brief, iteration scores, source references, generation history, transformation history, final version, decision rationale, and reusable lessons.
-
-Raw media, credentials, private keys, and unnecessary logs are not published.
 
 Publication returns the real UAL and network when OriginTrail completes the operation.
 
@@ -68,14 +90,71 @@ Future runs load locally indexed published UALs and retrieve their public conten
 
 If DKG publication or retrieval fails, the media run remains honest about that failure and does not display a fabricated UAL.
 
+### Published to the DKG testnet
+
+Each published `MediaRunKnowledgeAsset` contains:
+
+- The **creative brief** (the prompt history).
+- The **iteration history**: for each version, the evaluation scores, failure descriptions, and how the artifact was improved.
+- The **final version** selected for the run.
+- **Reusable lessons** learned during the run, retrieved by future runs.
+- Public **artifact URLs** for generated media.
+- **Generation history** with the capability, purpose, and real cost used per version.
+- **Transformation history** showing which fixes were applied and why.
+- The **decision rationale** of the Director and Critic.
+
+### Remains local only
+
+- Raw media files on disk (only public artifact URLs are published).
+- The full run ledger event history in the local SQLite database.
+- Internal agent messages and orchestration state.
+- Credentials, API keys, and private keys.
+- The DKG node's publishing wallet and keystore.
+
 ## Setup
 
 Requirements:
 
 - Node.js 20 or newer.
-- A Livepeer Agent credential or available Livepeer Agent demo-credit account.
-- An OriginTrail V8-compatible testnet node configuration.
-- A Base Sepolia wallet with test ETH and test TRAC for publication.
+- A running OriginTrail DKG V10 node (testnet, Base Sepolia) on `http://127.0.0.1:9200`.
+- A Livepeer Agent credential or an available Livepeer Agent demo-credit account.
+- OpenRouter (or a compatible) API key for the Director, Critic, and extraction LLM calls.
+
+### Start the DKG V10 node
+
+Install the DKG V10 node package globally:
+
+```bash
+npm install -g @origintrail-official/dkg
+```
+
+Create the node configuration directory:
+
+```bash
+dkg init
+```
+
+Choose the `testnet` network (DKG V10 Base Testnet) and an `edge` node role.
+
+Start the node:
+
+```bash
+dkg start
+```
+
+Check that it is listening on port 9200:
+
+```bash
+dkg status
+```
+
+The local node directory is `~/.dkg`.
+
+The node's agent wallet is created on first start.
+
+Top up the node's agent wallet with Base Sepolia test ETH and test TRAC so the node can cover gas and TRAC fees for publication.
+
+### Run Liverloop
 
 Install dependencies:
 
@@ -105,17 +184,44 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+### Run Liverloop from OpenCode
+
+The same setup works from the OpenCode terminal inside the repo.
+
+Opencode can run the node, the app, and the validation commands for you as long as:
+
+- The DKG V10 node is running on `127.0.0.1:9200`.
+- `.env.local` contains real values.
+- `npm install` and `npm run db:push` succeeded.
+
 ## Environment Variables
 
 ```env
 LIVEPEER_API_KEY=...
-DKG_ENDPOINT=https://v6-pegasus-node-02.origin-trail.network
-DKG_PORT=8900
-DKG_PRIVATE_KEY=0x...
+DKG_ENDPOINT=http://127.0.0.1
+DKG_PORT=9200
+DKG_CONTEXT_GRAPH=0xc376B7120f0F895a7853cc445B7b139374e1c0f8/liverloop
 DKG_BLOCKCHAIN=base:84532
 OPENROUTER_API_KEY=...
 OPENROUTER_MODEL=nex-agi/nex-n2.5-pro:free
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+Multiple LLM providers are optional:
+
+```env
+# OPENROUTER_API_KEY_2=sk-or-v1-yyy
+# GROQ_API_KEY=gsk_xxx
+# XAI_API_KEY=xai_xxx
+```
+
+Model overrides are optional:
+
+```env
+# OPENROUTER_MODEL_PLANNER=...
+# OPENROUTER_MODEL_CRITIC=...
+# OPENROUTER_FAST_MODEL=...
+# OPENROUTER_VISION_MODEL=...
 ```
 
 Never commit `.env.local`, private keys, API keys, or wallet secrets.
@@ -145,8 +251,9 @@ OriginTrail evidence is visible in the knowledge page and includes:
 
 - Publication status.
 - Testnet name.
-- UAL returned by `dkg.js`.
-- The run event recording publication status and any transaction hash returned by the SDK.
+- The UAL returned by the DKG V10 node.
+- On-chain verification against the DKG V10 Base Testnet Hub contract.
+- A link to the publishing agent on Basescan.
 
 The repository does not fabricate UALs or claim verification when the external publication fails.
 
@@ -164,8 +271,9 @@ The Livepeer smoke script performs a real `flux-schnell` generation and prints t
 
 ## Known Limitations
 
+- The Critic Agent currently evaluates only visual contrast from a small sample of frames extracted from the artifact; it does not yet judge deeper qualities such as pacing, tone, composition beyond contrast, or cross-section continuity. A future vision-specific critic can pass native image or video inputs to a multimodal model.
 - The orchestration request currently runs in the application process and needs a durable worker for production deployment.
 - The first UI version renders the returned artifact URL and does not yet provide a full media editor.
-- Critic evaluation receives artifact metadata and a supplied description; a future vision-specific critic can pass native image or video inputs to a multimodal model.
-- OriginTrail publication requires a funded testnet wallet and a reachable compatible node.
+- OriginTrail publication requires the local DKG V10 node to be running, reachable, and its wallet funded with Base Sepolia test ETH and test TRAC.
+- DKG testnet publication does not burn testnet TRAC, so testnet publishes are counted as simulated on the testnet; on the DKG mainnet they would be fully paid and on-chain.
 - OpenRouter free models can be rate-limited or unavailable, so the configured model can be changed through the environment.
