@@ -72,7 +72,7 @@ export function RunDashboard({ runId }: { runId: string }) {
         <section className="grid gap-10 py-12 lg:grid-cols-[0.92fr_1.08fr] lg:py-16">
           <div className="flex flex-col justify-center">
             <StatusPill status={data.run.status} active={isActive} />
-            <h1 className="mt-6 max-w-3xl text-4xl font-semibold leading-[0.98] tracking-[-0.065em] md:text-6xl">{data.run.brief.objective}</h1>
+            <h1 className="mt-6 max-w-3xl text-xl font-semibold leading-[0.98] tracking-[-0.065em] md:text-2xl">{data.run.brief.objective}</h1>
             <div className="mt-8 flex flex-wrap gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
               {data.run.brief.format ? <span className="rounded-full border border-border bg-card/60 px-3 py-1.5">{data.run.brief.format}</span> : null}
               {data.run.brief.duration ? <span className="rounded-full border border-border bg-card/60 px-3 py-1.5">{data.run.brief.duration}s</span> : null}
