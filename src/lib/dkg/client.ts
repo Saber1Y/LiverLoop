@@ -35,13 +35,18 @@ function contextGraphId(): string {
   return process.env.DKG_CONTEXT_GRAPH ?? "0xc376B7120f0F895a7853cc445B7b139374e1c0f8/liverloop";
 }
 
+function authHeaders(): Record<string, string> {
+  const token = process.env.DKG_AUTH_TOKEN;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request<T>(
   path: string,
   init: { method?: string; body?: unknown } = {},
 ): Promise<T> {
   const response = await fetch(`${baseUrl()}${path}`, {
     method: init.method ?? "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
   });
   if (!response.ok) {
@@ -98,7 +103,7 @@ export async function queryContextGraph(params: {
 export async function getKnowledgeAssetRecord(ual: string): Promise<Record<string, unknown>> {
   const response = await fetch(
     `${baseUrl()}/api/knowledge-assets/${encodeURIComponent(ual)}?contextGraphId=${encodeURIComponent(contextGraphId())}`,
-    { method: "GET" },
+    { method: "GET", headers: authHeaders() },
   );
   if (!response.ok) {
     const text = await response.text().catch(() => "");

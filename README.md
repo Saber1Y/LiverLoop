@@ -2,6 +2,10 @@
 
 Liverloop is an autonomous multimodal media production loop that uses Livepeer to create media, evaluates and selectively improves its work, and preserves durable lessons through OriginTrail DKG.
 
+**Live demo:** <https://liverloop.onrender.com>
+
+The deployed app renders the full production history and knowledge base. Running a new live loop requires a DKG V10 node endpoint and API credentials (see Setup).
+
 ## Hackathon Track
 
 **Track 2: Livepeer Agent + OriginTrail DKG**
