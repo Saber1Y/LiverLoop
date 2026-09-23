@@ -37,6 +37,9 @@ yarn-error.log*
 # runtime data
 data/*
 !data/.gitkeep
+!data/liverloop.db
+-data/liverloop.db-shm
+-data/liverloop.db-wal
 
 # vercel
 .vercel
