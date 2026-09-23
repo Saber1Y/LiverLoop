@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import ffmpegPath from "ffmpeg-static";
+import { ffmpegExecutable } from "./ffmpegPath";
 
 export const CTA_OVERLAY_WIDTH = 1920;
 export const CTA_OVERLAY_HEIGHT = 400;
@@ -44,7 +44,7 @@ export function renderCtaOverlayPng(
     `text='${escapeDrawtext(text)}':x=(w-text_w)/2:y=(h-text_h)/2`;
 
   try {
-    return execFileSync(ffmpegPath!, [
+    return execFileSync(ffmpegExecutable(), [
       "-v",
       "error",
       "-f",

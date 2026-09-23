@@ -8,6 +8,7 @@ import ffmpegStatic from "ffmpeg-static";
 import type { LlmImagePart } from "../llm/types";
 import type { MediaArtifactType } from "../domain/media";
 import { downloadArtifactUrl } from "./inspect";
+import { ffmpegExecutable as resolveFfmpeg } from "./ffmpegPath";
 
 const execFileAsync = promisify(execFile);
 const FFMPEG_TIMEOUT_MS = 60_000;
@@ -19,10 +20,12 @@ export type VisualFrameSample = {
 };
 
 function ffmpegExecutable(): string {
-  if (!ffmpegStatic) {
-    throw new Error("ffmpeg-static did not resolve a binary for this platform.");
+  try {
+    return resolveFfmpeg();
+  } catch (error) {
+    if (ffmpegStatic) return ffmpegStatic;
+    throw error;
   }
-  return ffmpegStatic;
 }
 
 async function downloadToTemp(url: string): Promise<{ dir: string; path: string }> {
