@@ -12,7 +12,7 @@ Liverloop is an autonomous multimodal media production loop. It uses Livepeer to
 
 The single loop connects the two networks: Livepeer generates the media, OriginTrail remembers what the run learned.
 
-Live app: <https://liverloop.onrender.com> · Live loop: `http://localhost:3000` · OriginTrail DKG V10 Base Testnet (`base:84532`).
+Live app: <http://162.62.231.147:3000> · Live loop: `http://localhost:3000` · OriginTrail DKG V10 Base Testnet (`base:84532`).
 
 [Quickstart](#quickstart) · [Screenshots](#screenshots) · [The One Rule](#the-one-rule) · [What Liverloop Does](#what-liverloop-does) · [Architecture](#architecture) · [How Liverloop Uses Livepeer and DKG](#how-liverloop-uses-livepeer-and-dkg) · [Honesty Table](#what-is-real-vs-pending---the-honesty-table) · [Run It Locally](#run-it-locally) · [The One-Flow Demo](#the-one-flow-demo) · [Configuration](#configuration) · [Deploy](#deploy)
 
@@ -385,11 +385,17 @@ npm run build
 npm run start
 ```
 
-### Render snapshot
+### Self-hosted VPS (live)
 
-The live app at <https://liverloop.onrender.com> renders the seeded run history and knowledge base from the committed SQLite database.
+The live app runs on a self-hosted Ubuntu VPS at <http://162.62.231.147:3000>, with the DKG node and the app on the same box (`liverloop-app.service` -> `dkg-node.service` on `127.0.0.1:9200`). The committed SQLite database seeds the run history and knowledge base, and a new live loop runs end-to-end there over HTTP.
 
-The deployed site is read-only: running a new live loop there requires a reachable DKG node endpoint and API credentials, configured through the environment variables above.
+```bash
+git pull origin main
+NODE_OPTIONS=--max-old-space-size=1024 npm run build
+sudo systemctl restart liverloop-app
+```
+
+The app binds port 3000 in production mode. The DKG node is not exposed externally; the app reaches it through `DKG_ENDPOINT` / `DKG_PORT`.
 
 ## Project Layout
 
