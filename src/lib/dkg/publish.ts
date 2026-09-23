@@ -1,6 +1,6 @@
 import { MediaRunKnowledgeAsset } from "../domain/knowledge";
 import { createKnowledgeAsset, dkgNetwork, publishKnowledgeAssetToVm, shareKnowledgeAsset } from "./client";
-import type { V10Quad } from "./client";
+import type { V10Publication, V10Quad } from "./client";
 import type { DkgAssetResponse, DkgPublication, PublicKnowledgeAsset } from "./types";
 
 const LL = "https://liverloop.media/ontology/";
@@ -72,6 +72,22 @@ function toPayload(asset: PublicKnowledgeAsset): Record<string, unknown> {
   };
 }
 
+export const DKG_PUBLISH_RETRIES = 4;
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isTransientPublishError(error: Error): boolean {
+  const message = error.message;
+  return (
+    message.includes("(500)") ||
+    message.includes("storage_ack_insufficient") ||
+    message.includes("quorum") ||
+    message.includes("PROTOCOL_UNSUPPORTED") ||
+    message.includes("(502)") ||
+    message.includes("(503)")
+  );
+}
+
 export async function publishKnowledgeAsset(
   asset: PublicKnowledgeAsset,
 ): Promise<DkgPublication> {
@@ -82,7 +98,22 @@ export async function publishKnowledgeAsset(
     if (created.status !== "swm-shared" || created.publishReady !== true) {
       await shareKnowledgeAsset({ name });
     }
-    const publication = await publishKnowledgeAssetToVm({ name });
+
+    let publication: V10Publication | undefined;
+    let lastError: Error | undefined;
+    for (let attempt = 1; attempt <= DKG_PUBLISH_RETRIES; attempt += 1) {
+      try {
+        publication = await publishKnowledgeAssetToVm({ name });
+        break;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error("OriginTrail VM publish failed.");
+        if (!isTransientPublishError(lastError) || attempt === DKG_PUBLISH_RETRIES) break;
+        await sleep(attempt * 2_000);
+      }
+    }
+    if (!publication) {
+      throw lastError ?? new Error("OriginTrail VM publish failed.");
+    }
 
     const response: DkgAssetResponse = {
       UAL: publication.ual,
