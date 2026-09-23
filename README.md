@@ -4,7 +4,9 @@ Liverloop is an autonomous multimodal media production loop that uses Livepeer t
 
 **Live demo:** <https://liverloop.onrender.com>
 
-The deployed app renders the full production history and knowledge base. Running a new live loop requires a DKG V10 node endpoint and API credentials (see Setup).
+The deployed app renders the full production history and knowledge base from a seeded snapshot.
+
+The complete Liverloop loop - generate, evaluate, improve, and publish to OriginTrail DKG - runs fully on `http://localhost:3000` with a local DKG V10 node and Livepeer credentials. Every phase streams live, real Livepeer costs are recorded, and a fresh run completes all the way to an on-chain (testnet) knowledge asset publication. The deployed site is read-only: running a new live loop there requires a remote DKG node endpoint and API credentials (see Setup).
 
 ## Hackathon Track
 
