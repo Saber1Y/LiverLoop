@@ -89,7 +89,7 @@ State it loud: Track 2: Livepeer Agent + OriginTrail DKG.
 - Always say "Base Sepolia testnet", never "mainnet".
 - 2 of 18 assets failed publication and are marked honestly. If asked: that is a feature. The app never fabricates a UAL.
 - Testnet publishes do not create a per-asset transaction hash (they are simulated, no TRAC is burned). The strongest on-chain proof is the agent EOA's real transaction history on Basescan plus the live in-app verification against the node.
-- The deployed app at `https://liverloop.onrender.com` reads the environment through `NEXT_PUBLIC_APP_URL` and uses whatever DKG node is configured by `DKG_ENDPOINT` / `DKG_PORT`. Verify against the environment that is actually running.
+- The full loop for the live run is demonstrated on the local app at `http://localhost:3000`, which reads the environment through `NEXT_PUBLIC_APP_URL` and uses the local DKG node configured by `DKG_ENDPOINT` / `DKG_PORT`. The deployed site at `https://liverloop.onrender.com` renders the production history and knowledge base from a seeded snapshot; running a new live loop there requires a remote node endpoint and API credentials. State which environment is actually running if asked.
 
 ## Pre-record checklist
 
