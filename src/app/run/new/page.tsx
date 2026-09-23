@@ -52,6 +52,26 @@ const workspacePhases: WorkspacePhase[] = [
   { label: "Knowledge publication", detail: "Publishing the durable lesson to OriginTrail." },
 ];
 
+const DRAFT_BRIEF_KEY = "liverloop:new-run:draft";
+
+function readDraftBrief(): string {
+  try {
+    return typeof window === "undefined" ? "" : window.sessionStorage.getItem(DRAFT_BRIEF_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeDraftBrief(value: string): void {
+  try {
+    if (typeof window === "undefined") return;
+    if (value) window.sessionStorage.setItem(DRAFT_BRIEF_KEY, value);
+    else window.sessionStorage.removeItem(DRAFT_BRIEF_KEY);
+  } catch {
+    // Persistence is best-effort; the workspace still works without it.
+  }
+}
+
 function getWorkspaceProgress(snapshot: RunSnapshot | null, runState: string): WorkspaceProgress {
   if (!snapshot && runState === "idle") {
     return {
@@ -110,10 +130,14 @@ function WorkspaceProgress({ progress }: { progress: WorkspaceProgress }) {
 
 export default function WorkspacePage() {
   const [runState, setRunState] = useState<"idle" | "evaluating" | "fixing" | "complete" | "failed">("idle");
-  const [command, setCommand] = useState("");
+  const [command, setCommand] = useState<string>(() => readDraftBrief());
   const [runId, setRunId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<RunSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    writeDraftBrief(command);
+  }, [command]);
 
   useEffect(() => {
     if (!runId) return;
