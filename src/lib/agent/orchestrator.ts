@@ -501,6 +501,7 @@ export async function executeRun(runId: string): Promise<void> {
     let existing = new Map<string, StepArtifact>();
     let finalVersionId: string | null = null;
     let lastDecision: DirectorDecision | null = null;
+    let bestVersion: { id: string; score: number; clean: boolean } | null = null;
 
     for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration += 1) {
       updateRun(run.id, {
@@ -625,10 +626,41 @@ export async function executeRun(runId: string): Promise<void> {
         ? { ...evaluation, decision: "fail", issues: [...evaluation.issues, ...bakedTextIssues] }
         : evaluation;
 
-      if (evaluationWithEvidence.decision === "pass" || iteration === MAX_ITERATIONS) {
+      const candidate = {
+        id: version.id,
+        score: evaluation.overall,
+        clean: !hasBakedTextIssue,
+      };
+      if (
+        !bestVersion ||
+        candidate.score > bestVersion.score ||
+        (candidate.score === bestVersion.score && candidate.clean && !bestVersion.clean)
+      ) {
+        bestVersion = candidate;
+      }
+
+      if (evaluationWithEvidence.decision === "pass") {
         setSelectedVersion(runId, version.id);
         finalVersionId = version.id;
         recordEvent({ runId, versionNumber: iteration, type: "FINAL_VERSION_SELECTED", data: { versionId: version.id, evaluation } });
+        break;
+      }
+
+      if (iteration === MAX_ITERATIONS) {
+        const selectedId = bestVersion?.id ?? version.id;
+        setSelectedVersion(runId, selectedId);
+        finalVersionId = selectedId;
+        recordEvent({
+          runId,
+          versionNumber: iteration,
+          type: "FINAL_VERSION_SELECTED",
+          data: {
+            versionId: selectedId,
+            evaluation,
+            bestScore: bestVersion?.score,
+            reason: "budget-exhausted",
+          },
+        });
         break;
       }
 
