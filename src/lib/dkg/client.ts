@@ -95,6 +95,18 @@ export async function queryContextGraph(params: {
   });
 }
 
+export async function getKnowledgeAssetRecord(ual: string): Promise<Record<string, unknown>> {
+  const response = await fetch(
+    `${baseUrl()}/api/knowledge-assets/${encodeURIComponent(ual)}?contextGraphId=${encodeURIComponent(contextGraphId())}`,
+    { method: "GET" },
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`DKG V10 node failed to resolve ${ual} (${response.status}): ${text.slice(0, 300)}`);
+  }
+  return (await response.json()) as Record<string, unknown>;
+}
+
 export function dkgNetwork(): string {
   return process.env.DKG_BLOCKCHAIN ?? "base:84532";
 }

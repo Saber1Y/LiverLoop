@@ -209,6 +209,9 @@ export default function WorkspacePage() {
   const dimension = (name: string) => latestVersion?.evaluation?.dimensions.find((item) => item.name === name)?.score;
   const publishedEvent = snapshot?.events.find((event) => event.type === "KNOWLEDGE_PUBLISHED");
   const publishedUal = typeof publishedEvent?.data.ual === "string" ? publishedEvent.data.ual : null;
+  const memoryEvents = snapshot?.events.filter((event) => event.type === "KNOWLEDGE_RETRIEVED" && Array.isArray(event.data.lessons)) ?? [];
+  const retrievedLessons = memoryEvents.flatMap((event) => Array.isArray(event.data.lessons) ? event.data.lessons.map(String) : []);
+  const memoryUals = memoryEvents.map((event) => typeof event.data.ual === "string" ? event.data.ual : null).filter((ual): ual is string => ual !== null);
 
   return (
     <main className="relative min-h-[100dvh] w-full overflow-hidden bg-[#09090b] text-foreground">
@@ -318,6 +321,37 @@ export default function WorkspacePage() {
                 )}
               </div>
             </motion.div>
+
+            {/* The Memory Block (Lessons retrieved from DKG) */}
+            <AnimatePresence>
+              {retrievedLessons.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  className="w-full rounded-xl border border-primary/30 bg-primary/5 p-4 backdrop-blur-md shadow-[0_0_25px_rgba(200,245,106,0.08)] md:w-56"
+                >
+                  <div className="mb-2 flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-primary">
+                    <DatabaseZap className="size-3" /> Memory retrieved
+                  </div>
+                  <p className="mb-2 text-[11px] leading-tight text-muted-foreground">
+                    {memoryUals.length > 0
+                      ? `Lessons pulled from ${memoryUals.length} prior Knowledge Asset${memoryUals.length > 1 ? "s" : ""} and injected into this Director plan.`
+                      : "Lessons from prior DKG runs injected into this Director plan."}
+                  </p>
+                  <div className="space-y-1.5 border-t border-primary/15 pt-2">
+                    {retrievedLessons.slice(0, 3).map((lesson, index) => (
+                      <p key={index} className="flex items-start gap-1.5 text-[10px] leading-4 text-muted-foreground">
+                        <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-primary" />
+                        <span className="line-clamp-2">{lesson}</span>
+                      </p>
+                    ))}
+                    {retrievedLessons.length > 3 ? (
+                      <p className="pt-0.5 text-[9px] font-mono uppercase tracking-[0.12em] text-muted-foreground/70">+ {retrievedLessons.length - 3} more lessons</p>
+                    ) : null}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* The Provenance Block (Expands on complete) */}
             <AnimatePresence>
